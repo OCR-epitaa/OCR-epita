@@ -83,7 +83,10 @@ int image_save(const struct Image *img, const char *path) {
 	return 0;
 }
 
-void free_image(struct *img) {
+void free_image(struct Image *img) {
+	if (!img) {
+		return;
+	}
 	free(img->pixels);
 	free(img);
 }
