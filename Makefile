@@ -1,0 +1,18 @@
+CC ?= gcc
+CPPFLAGS = $(shell sdl2-config --cflags)
+CFLAGS = -Wall -Wextra -Wvla -Werror -std=c99 -pedantic -I..
+LDLIBS = $(shell sdl2-config --libs)
+
+SRCS = ../window.c button.c main.c
+OBJS = $(SRCS:.c=.o)
+TARGET = button
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+
+clean:
+	$(RM) $(TARGET)
+	$(RM) $(OBJS)
+
+.PHONY: all clean
