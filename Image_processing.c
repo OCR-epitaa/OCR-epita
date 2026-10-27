@@ -215,3 +215,33 @@ struct Image *image_crop(const struct Image *img, int x, int y, int w, int h) {
   return result;
 }
 
+struct Image *image_resize(const struct Image *img, int new_width, int new_height) {
+  struct Image *result = malloc(sizeof(struct Image));
+  if (!result || new_width == 0 || new_height == 0) {
+    return NULL;
+  }
+  result->width = new_width;
+  result->height = new_height;
+  result->pixels = malloc(new_width * new_height);
+  if (!pixels) {
+    free(result);
+    return NULL;
+  }
+
+  double scale_x = (double)img->width / (double)new_width;
+  double scale_y = (double)img->height / (double)new_height;
+
+  for (int row = 0; row < new_height; row++) {
+    for (int col = 0; col < new_width; col++) {
+      double srcx = ((double)row + 0.5) * scale_x - 0.5;
+      double srcy = ((double)col + 0.5) * scale_y - 0.5;
+      (result->pixels)[row * new_width + col] = (img->pixels)[srcy * img->width + srcx];
+    }
+  }
+
+  return result;
+}
+
+struct Image *image_rotate(const struct Image *img, double angle_deg) {
+
+}

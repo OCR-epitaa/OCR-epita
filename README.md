@@ -3,9 +3,9 @@
 Ok mes couillasses, d'après ce que j'ai compris des consignes on aura besoin de ça pour la suite du projet.
 
 On a une struct pour les images, 3 paramètres : struct Image
-    - size_t height // la hauteur de l'image
-    - size_t width // la largeur de l'image
-    - unsigned char *pixels // Là c'est plus chiant : un array contenant tous les pixels de dimensions height * width, en greyscale (en gros une valeur entre 0-255, 0 blanc et 255 noir). 
+    - size_t height, la hauteur de l'image
+    - size_t width, la largeur de l'image
+    - unsigned char *pixels, Là c'est plus chiant : un array contenant tous les pixels de dimensions height * width, en greyscale (en gros une valeur entre 0-255, 0 blanc et 255 noir). 
 
 Image *image_load(const char *path);
 Tu lui donne le chemin vers ton image en tant que string, il te renvoie l'image en tant que struct Image en nuances de gris
