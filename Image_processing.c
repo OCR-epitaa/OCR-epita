@@ -128,3 +128,40 @@ struct Image *image_binarize(const struct Image *img, int threshold) {
 
   return result;
 }
+
+struct Image *image_crop(const struct Image *img, int x, int y, int w, int h) {
+  // Checks if img is NULL or if an argument is incorrect
+  if (!img || x < 0 || y < 0 || w <= 0 || h <= 0) {
+    return NULL;
+  }
+
+  // Checks if out of bounds
+  int width = img->width;
+  int height = img->height;
+  if (x > width - w || y > height - h) {
+    return NULL;
+  }
+
+  // Initialize the struct Image that will be returned
+  struct Image *result = malloc(sizeof(struct Image));
+  if (!result) {
+    return NULL;
+  }
+  result->width = w;
+  result->height = h;
+  result->pixels = malloc(w * h);
+  if (!(result->pixels)) {
+    free(result);
+    return NULL;
+  }
+
+  // Builds the image
+  for (int row = 0; row < h; row++) {
+    for (int col = 0; col < w; col++) {
+      (result->pixels)[row * w + col] = (img->pixels)[(row + y) * width + col + x];
+    }
+  }
+
+  return result;
+}
+

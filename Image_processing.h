@@ -18,8 +18,8 @@ void   image_free(struct Image *img); // Free une struct Image, pensez-y I beg
 
 struct Image *image_binarize(const struct Image *img, int threshold); // si la valeur de gris est sous le threshold, le pixel de result sera noir et blanc sinon
 
-struct Image *image_rotate(const Image *img, double angle_deg); // manual rotation
-double image_detect_skew(const Image *img);              // for auto-deskew later
 struct Image *image_denoise(const Image *img);
 struct Image *image_enhance_contrast(const Image *img);
-struct Image *image_crop(const Image *img, int x, int y, int w, int h);
+
+struct Image *image_crop(const Image *img, int x, int y, int w, int h); // prend une image, les coordonnées x, y d'un point de l'image, une largeur et une hauteur de taille de morceau de l'image et renvoie ce morceau de l'image
+struct Image *image_rotate(const Image *img, double angle_deg); // manual rotation
