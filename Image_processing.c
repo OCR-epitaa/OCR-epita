@@ -91,6 +91,56 @@ void free_image(struct Image *img) {
 	free(img);
 }
 
+int automatic_threshold_calculator (const struct Image *img) {
+  // Check if img is NULL
+  if (!img) {
+    return -1;
+  }
+
+  // Initialize an histogram
+  long hist[256] = {0};
+
+  long total_values = 0;
+  long nb_pixels = (long)img->width * img->height;
+  // Fills the histogram
+  for (int row = 0; row < img->height; row++) {
+    for (int col = 0; col < img->width; col++) {
+      int val = (img->pixels)[row * img->width + col];
+      hist[val]++;
+      total_values += val;
+    }
+  }
+
+  // Calculate the actual otsu threshold
+  int t;
+  int max_t = 128;
+  double max = 0.0;
+
+  long nb_pixels_dark = 0;
+  long nb_pixels_light = nb_pixels;
+
+  long sum_dark = 0;
+  long sum_light = total_values;
+
+  for (t = 0; t < 256; t++) {
+    if (nb_pixels_light > 0 && nb_pixels_dark > 0) {
+      double moy_light = (double)sum_light / (double)nb_pixels_light;
+      double moy_dark = (double)sum_dark / (double)nb_pixels_dark;
+      if (max < nb_pixels_light * nb_pixels_dark * (moy_light - moy_dark) * (moy_light - moy_dark)) {
+        max = (double)nb_pixels_light * (double)nb_pixels_dark * (moy_light - moy_dark) * (moy_light - moy_dark);
+        max_t = t;
+      }
+    }
+    nb_pixels_dark += hist[t];
+    nb_pixels_light = nb_pixels - nb_pixels_dark;
+
+    sum_dark += hist[t] * t;
+    sum_light = total_values - sum_dark;
+  }
+  
+  return max_t;
+}
+
 struct Image *image_binarize(const struct Image *img, int threshold) {
   // Check if img is NULL
   if (!img) {

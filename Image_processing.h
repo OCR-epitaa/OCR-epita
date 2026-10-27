@@ -16,6 +16,7 @@ struct Image *image_load(const char *path); // permet de load une image depuis s
 int    image_save(const struct Image *img, const char *path); // permet de save une struct Image en tant que png
 void   image_free(struct Image *img); // Free une struct Image, pensez-y I beg
 
+int automatic_threshold_calculator(const struct Image *img); // Calcule automatiquement un threshold pour binarize avec la methode otsu
 struct Image *image_binarize(const struct Image *img, int threshold); // si la valeur de gris est sous le threshold, le pixel de result sera noir et blanc sinon
 
 struct Image *image_denoise(const Image *img);
