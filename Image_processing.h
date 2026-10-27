@@ -11,13 +11,15 @@ struct Image {
     unsigned char *pixels;
 };
 
-struct Image *image_load(const char *path);
-int    image_save(const struct Image *img, const char *path);
-void   image_free(struct Image *img);
+// Une image load est forcément déjà en gris
+struct Image *image_load(const char *path); // permet de load une image depuis son chemin en tant que struct Image, la struct Image est plus facile à utiliser et plusieurs formats d'images sont acceptés, return NULL si il y a un pb
+int    image_save(const struct Image *img, const char *path); // permet de save une struct Image en tant que png
+void   image_free(struct Image *img); // Free une struct Image, pensez-y I beg
 
-Image *image_binarize(const Image *img, int threshold); // pass -1 for auto (Otsu)
-Image *image_rotate(const Image *img, double angle_deg); // manual rotation
+struct Image *image_binarize(const struct Image *img, int threshold); // si la valeur de gris est sous le threshold, le pixel de result sera noir et blanc sinon
+
+struct Image *image_rotate(const Image *img, double angle_deg); // manual rotation
 double image_detect_skew(const Image *img);              // for auto-deskew later
-Image *image_denoise(const Image *img);
-Image *image_enhance_contrast(const Image *img);
-Image *image_crop(const Image *img, int x, int y, int w, int h);
+struct Image *image_denoise(const Image *img);
+struct Image *image_enhance_contrast(const Image *img);
+struct Image *image_crop(const Image *img, int x, int y, int w, int h);

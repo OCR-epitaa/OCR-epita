@@ -90,3 +90,41 @@ void free_image(struct Image *img) {
 	free(img->pixels);
 	free(img);
 }
+
+struct Image *image_binarize(const struct Image *img, int threshold) {
+  // Check if img is NULL
+  if (!img) {
+    return NULL;
+  }
+
+  // Initizilaize the new struct Image
+  struct Image *result = malloc(sizeof(struct Image));
+  if (!result) {
+    return NULL;
+  }
+  
+  result->width = img->width;
+  result->height = img->height;
+  result->pixels = malloc(img->width * img->height);
+  if (!(result->pixels)) {
+    free(result);
+    return NULL;
+  }
+
+  // Sets up the right pixels color
+  for (int row = 0; row < img->height; row++) {
+    // Goes through each row
+    for (int col = 0; col < img->width; col++) {
+      // Goes through each column
+      if ((img->pixels)[row * img->width + col] < threshold) {
+        // if the gray is below the threshold then turn black
+        (result->pixels)[row * img->width + col] = 0;
+      } else {
+        // if the gray is above the threshold, then turn white
+        (result->pixels)[row * img->width + col] = 255;
+      }
+    }
+  }
+
+  return result;
+}
