@@ -6,7 +6,7 @@
 #include <string.h>
 
 #include "../include/images.h"
-#include "ui_layout.h"
+#include "../include/ui_layout.h"
 #define SAVE_FILE "output.png"
 
 /* Returns 1 if the mouse position is inside the rectangle. */
@@ -310,7 +310,7 @@ static void handle_click(UiState *state, const SDL_Event *event)
         status(state, state->current == NULL ?
             "LOAD AN IMAGE FIRST" :
             "OCR HANDOFF PLACEHOLDER - NOT CONNECTED");
-            
+
     } else if (hit(SOLVE_BUTTON, x, y)) {
         /*
          * TODO: call the command-line solver for each word, then draw the

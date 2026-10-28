@@ -1,5 +1,5 @@
 #include "../include/ui.h"
-#include "ui_layout.h"
+#include "../include/ui_layout.h"
 #include <ctype.h>
 #include <string.h>
 
@@ -274,8 +274,7 @@ void ui_render(SDL_Renderer *renderer, const UiState *state)
     SDL_RenderClear(renderer);
     fill(renderer, (SDL_Rect){0, 0, WINDOW_WIDTH, 90}, rgb(15, 25, 42));
     text(renderer, 28, 18, "WORD SEARCH OCR", 4, rgb(238, 245, 252));
-    text(renderer, 30, 66, "LOAD, CLEAN, RECOGNIZE, SOLVE", 1,
-        rgb(133, 156, 182));
+
     draw_image_panel(renderer, state);
     draw_options(renderer, state);
     draw_results(renderer);
