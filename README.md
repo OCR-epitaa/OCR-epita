@@ -35,4 +35,7 @@ Prend une struct Image, les coordonnées d'un point x, y et une largeur w ainsi 
 Renvoie une struct Image ne contenant que les pixels de l'image de largeur w, de hauteur h à partir du point de coordonnées x, y.
 En gros ça permet de faire une sélection à partir d'un point x, y et de dimensions w * h.
 
-Image *image_rotate(const Image *img, double angle_deg); // manual rotation
+Image *image_rotate(const Image *img, double angle_deg); 
+Tourne l'image img de angle_deg degrés autour du centre.
+Attention, lors d'une rotation non divisible par 90, les coins de l'image sortent du cadre et de nouveau arrive. Ces nouveaux sont fills par du blanc.
+Conseil, gardez l'image de base quelque part pour ne pas perdre définitvement les pixels perdus au cas où.

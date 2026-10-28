@@ -215,6 +215,7 @@ struct Image *image_crop(const struct Image *img, int x, int y, int w, int h) {
   return result;
 }
 
+/*
 struct Image *image_resize(const struct Image *img, int new_width, int new_height) {
   struct Image *result = malloc(sizeof(struct Image));
   if (!result || new_width == 0 || new_height == 0) {
@@ -241,7 +242,67 @@ struct Image *image_resize(const struct Image *img, int new_width, int new_heigh
 
   return result;
 }
-
+*/ 
 struct Image *image_rotate(const struct Image *img, double angle_deg) {
+    // Check for invalid parameter
+    if (!img || img->pixels == NULL || img->width <= 0 || img->height <= 0) {
+        return NULL;
+    }
 
+    // Initialize the result image
+    int width = img->width;
+    int height = img->height;
+    struct Image *result = malloc(sizeof(struct Image));
+    if (!result) {
+        return NULL;
+    }
+    result->width = width;
+    result->height = height;
+    
+    // Set up the result image 
+    size_t size = (size_t)width * height;
+    result->pixels = malloc(size);
+    if (!(result->pixels)) {
+        free(result);
+        return NULL;
+    }
+
+    // Fill the result image with white to cover for added pixels 
+    for (size_t i = 0; i < size; i++) {
+      (result->pixels)[i] = 255;
+    }
+
+    // Convert degrees to radians
+    double ang_rad = angle_deg * M_PI / 180.0;
+    double cos_ang = cos(ang_rad);
+    double sin_ang = sin(ang_rad);
+
+    // Image centers
+    double cx = width / 2.0;
+    double cy = height / 2.0;
+
+    // Fills the result image
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            // Oe
+            double dx = x - cx;
+            double dy = y - cy;
+
+            // j'ai envie de pleurer
+            double sx_f = dx * cos_ang + dy * sin_ang + cx;
+            double sy_f = -dx * sin_ang + dy * cos_ang + cy;
+
+            // Trouve le point le plus proche
+            long sx = lround(sx_f);
+            long sy = lround(sy_f);
+
+            // Check si ça dépasse les bords de l'image
+            if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
+                result->pixels[(size_t)y * width + x] = img->pixels[(size_t)sy * width + sx];
+            }
+        }
+    }
+
+    // Alors en gros on parcours l'immage result et on déduit quel couleur doit être où en observant l'image source
+    return result;
 }
