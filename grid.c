@@ -1,7 +1,42 @@
 #include "grid.h"
 
-struct Grid *initialize_grid (const char *str, int w, int h); // Initializes a grid of dimensions w, h and filled with the first w * h characters of str
-void free_grid (struct Grid *g); // frees the grid
+struct Grid *initialize_grid (const char *str, int size, int w, int h) {
+  if (size < w * h || !str) {
+    return NULL;
+  }
 
-int is_word_in_grid (const struct Grid *g, const char *word); // returns 1 if the word is in the grid, returns -1 if an error occured, and 0 otherwise
-int solve_grid (const struct Grid *g, const char *words, const char *delim); // Checks all the words separated by delim in words, if they are all in the grid then return 1, if an error occeurend return -1 else return 0 
+  struct Grid *grid = malloc(sizeof(struct Grid));
+  if (!grid) {
+    return NULL;
+  }
+
+  grid->height = h;
+  grid->width = w;
+  grid->table = malloc(sizeof(char) * h * w);
+  if (!(grid->table)) {
+    return NULL;
+  }
+
+  int result_i = 0;
+  for (int i = 0; i < w * h; i++) {
+    if (str[i] >= 'a' && str[i] <= 'z') {
+      (grid->table)[result_i] = (char)(str[i] - 'a' + 'A');
+      result_i++;
+    } else if (str[i] >= 'A' && str[i] <= 'Z') {
+      (grid->table)[result_i] = str[i];
+      result_i++;
+    }
+  }
+
+  return grid;
+}
+
+void free_grid (struct Grid *grid) {
+  if (!grid) {
+    return;
+  }
+  free(grid->table);
+  free(grid);
+}
+
+
