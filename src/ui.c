@@ -1,10 +1,41 @@
 #include "../include/button.h"
 #include "../include/ui.h"
+#include <SDL2/SDL_image.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-/* A small built-in font keeps this interface independent of SDL_ttf. */
+#include "../include/images.h"
+#define SAVE_FILE "output.png"
+
+/* ------------------------------------------------------------------ */
+/* Layout: every clickable area is defined once, so drawing and       */
+/* hit-testing always use the same rectangle.                         */
+/* ------------------------------------------------------------------ */
+
+static const SDL_Rect PATH_BOX     = {40, 164, 928, 42};
+static const SDL_Rect PREVIEW_BOX  = {40, 220, 928, 280};
+
+static const SDL_Rect MANUAL_ROW   = {40, 590, 180, 24};
+static const SDL_Rect ANGLE_BOX    = {230, 590, 112, 24};
+static const SDL_Rect AUTO_ROW     = {400, 590, 180, 24};
+static const SDL_Rect NOISE_ROW    = {40, 630, 200, 24};
+static const SDL_Rect CONTRAST_ROW = {400, 630, 200, 24};
+
+static const SDL_Rect SAVE_BUTTON  = {868, 818, 180, 44};
+static const SDL_Rect RUN_BUTTON   = {1060, 818, 160, 44};
+static const SDL_Rect SOLVE_BUTTON = {1232, 818, 184, 44};
+
+/* ------------------------------------------------------------------ */
+/* Pixel font: lets the UI draw text without depending on SDL_ttf.    */
+/* ------------------------------------------------------------------ */
+
+/*
+ * 36 glyphs (A-Z, then 0-9), 7 rows each. Every row is a 5-bit number:
+ * one bit per pixel column, the leftmost pixel being bit 4.
+ * Example: 14 = 01110, 31 = 11111.
+ */
 static const unsigned char glyphs[36][7] = {
     {14, 17, 17, 31, 17, 17, 17}, {30, 17, 17, 30, 17, 17, 30},
     {14, 17, 16, 16, 16, 17, 14}, {30, 17, 17, 17, 17, 17, 30},
@@ -26,24 +57,36 @@ static const unsigned char glyphs[36][7] = {
     {14, 17, 17, 14, 17, 17, 14}, {14, 17, 17, 15, 1, 1, 14}
 };
 
+/* ------------------------------------------------------------------ */
+/* Small drawing helpers                                              */
+/* ------------------------------------------------------------------ */
+
+/* Builds a fully opaque color. */
 static SDL_Color rgb(unsigned char r, unsigned char g, unsigned char b)
 {
     SDL_Color result = {r, g, b, 255};
     return result;
 }
 
+/* Draws a filled rectangle. */
 static void fill(SDL_Renderer *renderer, SDL_Rect rect, SDL_Color color)
 {
     SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
     SDL_RenderFillRect(renderer, &rect);
 }
 
+/* Draws only the border of a rectangle. */
 static void outline(SDL_Renderer *renderer, SDL_Rect rect, SDL_Color color)
 {
     SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
     SDL_RenderDrawRect(renderer, &rect);
 }
 
+/*
+ * Returns the 5-bit pattern of one row of a character.
+ * Letters and digits come from the table; a few symbols are hard-coded.
+ * Unknown characters return 0, so they are drawn as blanks.
+ */
 static unsigned char glyph_row(char character, int row)
 {
     character = (char)toupper((unsigned char)character);
@@ -53,15 +96,22 @@ static unsigned char glyph_row(char character, int row)
         return glyphs[26 + character - '0'][row];
     if (character == '-')
         return row == 3 ? 14 : 0;
+    if (character == '_')
+        return row == 6 ? 31 : 0;
     if (character == '.')
         return row == 6 ? 4 : 0;
     if (character == ':')
         return row == 2 || row == 5 ? 4 : 0;
     if (character == '/')
-        return row < 5 ? (unsigned char)(1 << (4 - row)) : 0;
+        return row < 5 ? (unsigned char)(1 << row) : 0;
     return 0;
 }
 
+/*
+ * Draws a string with the pixel font. Each font pixel becomes a
+ * scale x scale square. Characters advance by 6 * scale
+ * (5 pixels of glyph + 1 of spacing).
+ */
 static void text(SDL_Renderer *renderer, int x, int y, const char *value,
     int scale, SDL_Color color)
 {
@@ -90,6 +140,7 @@ static void text(SDL_Renderer *renderer, int x, int y, const char *value,
     }
 }
 
+/* Draws a card: dark background, border, heading and a divider line. */
 static void panel(SDL_Renderer *renderer, SDL_Rect rect,
     const char *heading)
 {
@@ -101,44 +152,170 @@ static void panel(SDL_Renderer *renderer, SDL_Rect rect,
         rect.w - 32, 1}, rgb(39, 57, 78));
 }
 
+/* Draws a push button. "selected" makes it bright blue. */
 static void button(SDL_Renderer *renderer, SDL_Rect rect,
     const char *label, int selected)
 {
     fill(renderer, rect, selected ? rgb(37, 104, 170) : rgb(27, 43, 64));
     outline(renderer, rect, selected ? rgb(63, 151, 221) :
         rgb(51, 72, 96));
+    /* 14 = height of the text: 7 font rows * scale 2. */
     text(renderer, rect.x + 10, rect.y + (rect.h - 14) / 2,
         label, 2, rgb(235, 243, 251));
 }
 
-static void option(SDL_Renderer *renderer, int x, int y, const char *label,
+/* Draws a checkbox (green when on) with its label on the right. */
+static void option(SDL_Renderer *renderer, SDL_Rect row, const char *label,
     int selected)
 {
-    SDL_Rect box = {x, y, 16, 16};
+    SDL_Rect box = {row.x, row.y + 4, 16, 16};
     fill(renderer, box, selected ? rgb(47, 150, 126) : rgb(28, 43, 61));
     outline(renderer, box, rgb(65, 81, 102));
-    text(renderer, x + 24, y + 3, label, 1, rgb(189, 203, 220));
+    text(renderer, row.x + 24, row.y + 7, label, 1, rgb(189, 203, 220));
 }
 
-static int hit(int x, int y, int w, int h, int pointer_x, int pointer_y)
+/* Returns 1 if the mouse position is inside the rectangle. */
+static int hit(SDL_Rect rect, int pointer_x, int pointer_y)
 {
-    SDL_Rect rect = {x, y, w, h};
     return is_inside(&rect, pointer_x, pointer_y);
 }
 
+/* Sets the message shown in the status bar at the bottom left. */
 static void status(UiState *state, const char *message)
 {
     snprintf(state->status, sizeof(state->status), "%s", message);
 }
 
-void ui_initialize(UiState *state)
+/* Rebuilds the preview texture from state->current. */
+static void refresh_preview(UiState *state)
 {
-    memset(state, 0, sizeof(*state));
-    state->level = 1;
-    snprintf(state->deskew_angle, sizeof(state->deskew_angle), "0.0");
-    status(state, "READY - SELECT AN IMAGE");
+    SDL_Texture *texture;
+
+    if (state->current == NULL)
+        return;
+    texture = SDL_CreateTextureFromSurface(state->renderer,
+        state->current);
+    if (texture == NULL) {
+        status(state, "COULD NOT CREATE PREVIEW TEXTURE");
+        return;
+    }
+    if (state->preview != NULL)
+        SDL_DestroyTexture(state->preview);
+    state->preview = texture;
+    state->image_w = state->current->w;
+    state->image_h = state->current->h;
 }
 
+/*
+ * Builds state->current from the original image: rotated by the typed
+ * angle if MANUAL DESKEW is ticked, unrotated otherwise.
+ */
+static void apply_rotation(UiState *state)
+{
+    double angle = 0.0;
+    SDL_Surface *rotated;
+    char message[64];
+
+    if (state->source == NULL)
+        return;
+    if (state->manual_deskew)
+        angle = strtod(state->deskew_angle, NULL);
+    rotated = image_rotate(state->source, angle);
+    if (rotated == NULL) {
+        status(state, "COULD NOT ROTATE IMAGE");
+        return;
+    }
+    if (state->current != NULL)
+        SDL_FreeSurface(state->current);
+    state->current = rotated;
+    refresh_preview(state);
+    snprintf(message, sizeof(message), "ROTATION APPLIED: %.1f DEGREES",
+        angle);
+    status(state, message);
+}
+
+/* Loads state->image_path as the new original image. */
+static void load_image(UiState *state)
+{
+    SDL_Surface *loaded;
+    char message[96];
+
+    if (state->image_path[0] == '\0') {
+        status(state, "NO IMAGE PATH GIVEN");
+        return;
+    }
+    loaded = image_load(state->image_path);
+    if (loaded == NULL) {
+        status(state, "COULD NOT LOAD IMAGE - CHECK THE PATH");
+        return;
+    }
+    if (state->source != NULL)
+        SDL_FreeSurface(state->source);
+    state->source = loaded;
+    apply_rotation(state);
+    snprintf(message, sizeof(message), "IMAGE LOADED - %dX%d",
+        state->source->w, state->source->h);
+    status(state, message);
+}
+
+/* Writes the image currently shown in the preview to SAVE_FILE. */
+static void save_current_image(UiState *state)
+{
+    char message[96];
+
+    if (state->current == NULL) {
+        status(state, "NOTHING TO SAVE - LOAD AN IMAGE FIRST");
+    } else if (image_save(state->current, SAVE_FILE) != 0) {
+        status(state, "COULD NOT SAVE IMAGE");
+    } else {
+        snprintf(message, sizeof(message), "SAVED TO %s", SAVE_FILE);
+        status(state, message);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* State and input handling                                           */
+/* ------------------------------------------------------------------ */
+
+/* Resets the UI to its starting state and prepares image loading. */
+void ui_initialize(UiState *state, SDL_Renderer *renderer)
+{
+    memset(state, 0, sizeof(*state));
+    state->renderer = renderer;
+    snprintf(state->deskew_angle, sizeof(state->deskew_angle), "0.0");
+    IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
+    /* Smooth scaling for the preview. Must be set before textures. */
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
+    /* Drag and drop is not supported: ignore those events entirely. */
+    SDL_EventState(SDL_DROPFILE, SDL_DISABLE);
+    SDL_EventState(SDL_DROPTEXT, SDL_DISABLE);
+    SDL_StartTextInput();
+    status(state, "READY - PASTE OR TYPE AN IMAGE PATH");
+}
+
+/* Frees everything ui_initialize and load_image created. */
+void ui_destroy(UiState *state)
+{
+    if (state->preview != NULL)
+        SDL_DestroyTexture(state->preview);
+    if (state->current != NULL)
+        SDL_FreeSurface(state->current);
+    if (state->source != NULL)
+        SDL_FreeSurface(state->source);
+    state->preview = NULL;
+    state->current = NULL;
+    state->source = NULL;
+    IMG_Quit();
+}
+
+/* An empty angle field makes no sense, so fall back to 0.0 degrees. */
+static void restore_angle_default(UiState *state)
+{
+    if (state->deskew_angle[0] == '\0')
+        snprintf(state->deskew_angle, sizeof(state->deskew_angle), "0.0");
+}
+
+/* Appends typed text to the image path, never overflowing the buffer. */
 static void edit_image_path(UiState *state, const SDL_Event *event)
 {
     size_t used = strlen(state->image_path);
@@ -153,8 +330,8 @@ static void edit_image_path(UiState *state, const SDL_Event *event)
 }
 
 /*
- * Manual angle input is a preprocessing setting. Keep image rotation outside
- * the recognition model so each difficulty level feeds the same OCR stage.
+ * Appends typed text to the rotation angle. Only characters that can
+ * appear in a number are accepted (digits, '.', '-').
  */
 static void edit_angle(UiState *state, const SDL_Event *event)
 {
@@ -171,6 +348,7 @@ static void edit_angle(UiState *state, const SDL_Event *event)
     }
 }
 
+/* Sends typed characters to whichever text field is being edited. */
 static void handle_text(UiState *state, const SDL_Event *event)
 {
     if (event->type == SDL_TEXTINPUT && state->editing_path)
@@ -179,38 +357,69 @@ static void handle_text(UiState *state, const SDL_Event *event)
         edit_angle(state, event);
 }
 
+/*
+ * Ctrl+V (Cmd+V on macOS): replaces the path with the clipboard text,
+ * cleans it, and loads the image right away.
+ */
+static void paste_path(UiState *state)
+{
+    char *clipboard = SDL_GetClipboardText();
+
+    if (clipboard == NULL || strlen(clipboard) >=
+            sizeof(state->image_path)) {
+        status(state, "CLIPBOARD EMPTY OR TOO LONG");
+    } else {
+        snprintf(state->image_path, sizeof(state->image_path), "%s",
+            clipboard);
+        image_clean_path(state->image_path);
+        state->editing_path = 0;
+        load_image(state);
+    }
+    SDL_free(clipboard);
+}
+
+/* Handles Ctrl+V, Enter (finish editing) and Backspace (delete). */
 static void handle_key(UiState *state, const SDL_Event *event)
 {
+    SDL_Keycode key;
     size_t length;
 
     if (event->type != SDL_KEYDOWN)
         return;
-    if (state->editing_path) {
-        length = strlen(state->image_path);
-        if (event->key.keysym.sym == SDLK_RETURN ||
-                event->key.keysym.sym == SDLK_KP_ENTER) {
-            state->editing_path = 0;
-            status(state, "IMAGE PATH SET - PREVIEW IS A PLACEHOLDER");
-        } else if (event->key.keysym.sym == SDLK_BACKSPACE && length > 0) {
-            state->image_path[length - 1] = '\0';
-        }
-    } else if (state->editing_angle) {
+    key = event->key.keysym.sym;
+
+    if (state->editing_angle) {
         length = strlen(state->deskew_angle);
-        if (event->key.keysym.sym == SDLK_RETURN ||
-                event->key.keysym.sym == SDLK_KP_ENTER) {
+        if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
             state->editing_angle = 0;
-            status(state, "ANGLE SET - DESKEW PROCESSING IS NOT CONNECTED");
-        } else if (event->key.keysym.sym == SDLK_BACKSPACE && length > 0) {
+            restore_angle_default(state);
+            apply_rotation(state);
+        } else if (key == SDLK_BACKSPACE && length > 0) {
             state->deskew_angle[length - 1] = '\0';
+        }
+        return;
+    }
+
+    if (key == SDLK_v && (event->key.keysym.mod & (KMOD_CTRL | KMOD_GUI))) {
+        paste_path(state);
+    } else if (state->editing_path) {
+        length = strlen(state->image_path);
+        if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+            state->editing_path = 0;
+            load_image(state);
+        } else if (key == SDLK_BACKSPACE && length > 0) {
+            state->image_path[length - 1] = '\0';
         }
     }
 }
 
+/* Flips a 0/1 flag. */
 static void toggle(int *value)
 {
     *value = !*value;
 }
 
+/* Handles a left click: text fields, checkboxes and buttons. */
 static void handle_click(UiState *state, const SDL_Event *event)
 {
     int x = event->button.x;
@@ -218,234 +427,168 @@ static void handle_click(UiState *state, const SDL_Event *event)
 
     if (event->button.button != SDL_BUTTON_LEFT)
         return;
-    if (state->editing_angle && state->deskew_angle[0] == '\0')
-        snprintf(state->deskew_angle, sizeof(state->deskew_angle), "0.0");
+
+    /* Clicking away from the angle box finishes the edit and applies it. */
+    if (state->editing_angle) {
+        restore_angle_default(state);
+        state->editing_angle = 0;
+        apply_rotation(state);
+    }
     state->editing_path = 0;
-    state->editing_angle = 0;
-    if (hit(42, 166, 62, 42, x, y)) {
-        state->level = 1;
-        status(state, "LEVEL 1 - CLEAN, BORDERED INPUT");
-    } else if (hit(112, 166, 62, 42, x, y)) {
-        state->level = 2;
-        status(state, "LEVEL 2 - DEFECTIVE INPUT");
-    } else if (hit(182, 166, 62, 42, x, y)) {
-        state->level = 3;
-        status(state, "LEVEL 3 - COMPLEX LAYOUT INPUT");
-    } else if (hit(280, 164, 680, 42, x, y)) {
+
+    if (hit(PATH_BOX, x, y)) {
         state->editing_path = 1;
-        state->editing_angle = 0;
-        status(state, "TYPE AN IMAGE PATH, THEN PRESS ENTER");
-    } else if (state->level >= 2 && hit(445, 574, 112, 28, x, y)) {
+        status(state, "TYPE OR PASTE A PATH, THEN PRESS ENTER");
+    } else if (hit(ANGLE_BOX, x, y)) {
         state->editing_angle = 1;
-        state->editing_path = 0;
         state->deskew_angle[0] = '\0';
-        status(state, "ENTER A MANUAL ROTATION ANGLE IN DEGREES");
-    } else if (state->level >= 2 && hit(280, 574, 150, 30, x, y)) {
+        status(state, "TYPE AN ANGLE IN DEGREES, THEN PRESS ENTER");
+    } else if (hit(MANUAL_ROW, x, y)) {
         toggle(&state->manual_deskew);
-    } else if (state->level >= 2 && hit(625, 574, 160, 30, x, y)) {
+        apply_rotation(state);
+    } else if (hit(AUTO_ROW, x, y)) {
         toggle(&state->automatic_deskew);
-    } else if (state->level >= 2 && hit(280, 610, 190, 30, x, y)) {
+    } else if (hit(NOISE_ROW, x, y)) {
         toggle(&state->noise_reduction);
-    } else if (state->level >= 2 && hit(625, 610, 180, 30, x, y)) {
+    } else if (hit(CONTRAST_ROW, x, y)) {
         toggle(&state->contrast_enhancement);
-    } else if (state->level >= 3 && hit(280, 668, 220, 30, x, y)) {
-        toggle(&state->multiple_columns);
-    } else if (state->level >= 3 && hit(625, 668, 180, 30, x, y)) {
-        toggle(&state->borderless_grid);
-    } else if (state->level >= 3 && hit(280, 704, 220, 30, x, y)) {
-        toggle(&state->surrounding_content);
-    } else if (hit(1060, 818, 160, 44, x, y)) {
+    } else if (hit(SAVE_BUTTON, x, y)) {
+        save_current_image(state);
+    } else if (hit(RUN_BUTTON, x, y)) {
         /*
-         * This is the one OCR/recognition handoff for every level. Connect
-         * a controller here; keep level checks out of the model call.
-         *
-         * Recommended pipeline ownership:
-         * - image loader: decode the selected path and convert to grayscale
-         * - preprocessing: apply deskew, denoise, and contrast options
-         * - detection/splitting: locate the grid/list and save letter crops
-         * - recognition module: load shared weights and infer each crop
-         * - result builder: assemble the character grid and word strings
-         *
-         * Put NN training, inference, and weight-file I/O in a separate
-         * recognition/NN module. The UI should only pass image/crop data
-         * and display its results; it should not contain NN math or weights.
+         * Single handoff to the recognition pipeline. Keep the UI free
+         * of neural-network code: it only passes data in and shows the
+         * results. state->current holds the pixels to process.
+         * - convert to grayscale / black and white
+         * - apply the other preprocessing options
+         * - locate the grid and the word list, then cut out letter crops
+         * - recognize each crop (separate NN module, shared weights)
+         * - rebuild the character grid and the word strings
          */
-        status(state, state->image_path[0] == '\0' ?
-            "SELECT AN IMAGE FIRST - OCR IS NOT CONNECTED" :
-            "SHARED OCR HANDOFF PLACEHOLDER - LEVEL DOES NOT CHANGE MODEL");
-    } else if (hit(1232, 818, 184, 44, x, y)) {
+        status(state, state->current == NULL ?
+            "LOAD AN IMAGE FIRST" :
+            "OCR HANDOFF PLACEHOLDER - NOT CONNECTED");
+    } else if (hit(SOLVE_BUTTON, x, y)) {
+        /*
+         * TODO: call the command-line solver for each word, then draw the
+         * solved grid with the found words circled.
+         */
         status(state, "SOLVER HANDOFF PLACEHOLDER - NOT CONNECTED");
-    } else {
-        state->editing_path = 0;
-        state->editing_angle = 0;
     }
 }
 
+/* Entry point for every SDL event: typing, keys, clicks. */
 void ui_handle_event(UiState *state, const SDL_Event *event)
 {
-    if (event->type == SDL_DROPFILE) {
-        /* SDL allocates the dropped path, so release it after copying. */
-        if (event->drop.file != NULL &&
-                strlen(event->drop.file) < sizeof(state->image_path)) {
-            snprintf(state->image_path, sizeof(state->image_path), "%s",
-                event->drop.file);
-            status(state, "IMAGE PATH RECEIVED - PREVIEW IS A PLACEHOLDER");
-        } else {
-            status(state, "IMAGE PATH TOO LONG - USE A SHORTER PATH");
-        }
-        SDL_free(event->drop.file);
-        state->editing_path = 0;
-        return;
-    }
-
     handle_text(state, event);
     handle_key(state, event);
     if (event->type == SDL_MOUSEBUTTONDOWN)
         handle_click(state, event);
 }
 
-static void draw_levels(SDL_Renderer *renderer, const UiState *state)
+/* ------------------------------------------------------------------ */
+/* Rendering (read-only: drawing never modifies the state)            */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Draws the image scaled to fit the preview box, keeping its
+ * proportions and centering it. Shows a message when nothing is loaded.
+ */
+static void draw_preview(SDL_Renderer *renderer, const UiState *state)
 {
-    panel(renderer, (SDL_Rect){24, 110, 232, 198}, "INPUT LEVEL");
-    button(renderer, (SDL_Rect){42, 166, 62, 42}, "L1",
-        state->level == 1);
-    button(renderer, (SDL_Rect){112, 166, 62, 42}, "L2",
-        state->level == 2);
-    button(renderer, (SDL_Rect){182, 166, 62, 42}, "L3",
-        state->level == 3);
-    text(renderer, 42, 226, "LEVEL MEANS INPUT DIFFICULTY", 1,
-        rgb(164, 181, 201));
-    text(renderer, 42, 247, "NOT A DIFFERENT OCR MODEL", 1,
-        rgb(108, 187, 239));
-    text(renderer, 42, 276, "L1 CLEAN L2 DEFECTS L3 LAYOUT", 1,
-        rgb(164, 181, 201));
+    fill(renderer, PREVIEW_BOX, rgb(12, 22, 37));
+    outline(renderer, PREVIEW_BOX, rgb(44, 66, 91));
+
+    if (state->preview == NULL) {
+        text(renderer, 414, 348, "NO IMAGE LOADED", 2,
+            rgb(169, 190, 212));
+        return;
+    }
+    {
+        float scale_x = (float)PREVIEW_BOX.w / (float)state->image_w;
+        float scale_y = (float)PREVIEW_BOX.h / (float)state->image_h;
+        float scale = scale_x < scale_y ? scale_x : scale_y;
+        SDL_Rect target;
+
+        target.w = (int)((float)state->image_w * scale);
+        target.h = (int)((float)state->image_h * scale);
+        target.x = PREVIEW_BOX.x + (PREVIEW_BOX.w - target.w) / 2;
+        target.y = PREVIEW_BOX.y + (PREVIEW_BOX.h - target.h) / 2;
+        SDL_RenderCopy(renderer, state->preview, NULL, &target);
+    }
 }
 
+/* Path box and image preview. */
 static void draw_image_panel(SDL_Renderer *renderer, const UiState *state)
 {
-    SDL_Rect path_box = {280, 164, 680, 42};
-    SDL_Rect preview = {280, 220, 680, 280};
     const char *path = state->image_path;
     size_t length = strlen(path);
-    SDL_Rect clip = {290, 174, 660, 22};
-    int line;
+    SDL_Rect clip = {50, 174, 908, 22};
 
-    panel(renderer, (SDL_Rect){264, 110, 720, 410}, "SOURCE IMAGE");
-    fill(renderer, path_box, rgb(11, 20, 34));
-    outline(renderer, path_box, rgb(58, 82, 109));
+    panel(renderer, (SDL_Rect){24, 110, 960, 410}, "SOURCE IMAGE");
+
+    /* Path box. Only the last 100 characters are shown, clipped to fit. */
+    fill(renderer, PATH_BOX, rgb(11, 20, 34));
+    outline(renderer, PATH_BOX, rgb(58, 82, 109));
     if (length > 100)
         path += length - 100;
     SDL_RenderSetClipRect(renderer, &clip);
-    text(renderer, 290, 179, state->image_path[0] == '\0' ?
-        "CLICK TO TYPE PATH OR DROP AN IMAGE" : path, 1,
+    text(renderer, 50, 179, state->image_path[0] == '\0' ?
+        "CLICK TO TYPE A PATH OR PRESS CTRL+V TO PASTE ONE" : path, 1,
         state->editing_path ? rgb(98, 199, 175) : rgb(173, 192, 213));
     SDL_RenderSetClipRect(renderer, NULL);
 
-    fill(renderer, preview, rgb(12, 22, 37));
-    outline(renderer, preview, rgb(44, 66, 91));
-    for (line = 0; line < preview.w; line += 16)
-        fill(renderer, (SDL_Rect){preview.x + line, preview.y, 1,
-            preview.h}, rgb(20, 33, 50));
-    for (line = 0; line < preview.h; line += 16)
-        fill(renderer, (SDL_Rect){preview.x, preview.y + line,
-            preview.w, 1}, rgb(20, 33, 50));
-    text(renderer, 486, 348, "IMAGE PREVIEW", 2, rgb(169, 190, 212));
-    text(renderer, 426, 379, "IMAGE LOADING NOT CONNECTED", 1,
-        rgb(105, 130, 157));
+    draw_preview(renderer, state);
 }
 
+/* Preprocessing options required by the subject (section 2.4). */
 static void draw_options(SDL_Renderer *renderer, const UiState *state)
 {
-    panel(renderer, (SDL_Rect){264, 536, 720, 254}, "INPUT OPTIONS");
-    if (state->level == 1) {
-        text(renderer, 286, 592, "CLEAN IMAGE / CAPITAL LETTERS", 1,
-            rgb(182, 198, 216));
-        text(renderer, 286, 618, "BORDERED GRID / ONE WORD COLUMN", 1,
-            rgb(182, 198, 216));
-        text(renderer, 286, 644, "GRID HAS AT LEAST FIVE ROWS AND COLUMNS",
-            1, rgb(182, 198, 216));
-        return;
-    }
+    panel(renderer, (SDL_Rect){24, 536, 960, 254}, "PREPROCESSING");
+    text(renderer, 40, 560, "CORRECT IMAGE DEFECTS BEFORE RECOGNITION", 1,
+        rgb(106, 187, 239));
 
-    /* Level-specific controls stop before the shared recognition stage. */
-    text(renderer, 286, 566, "PREPROCESSING BEFORE GRID AND WORD DETECTION",
-        1, rgb(106, 187, 239));
-    option(renderer, 280, 594, "MANUAL DESKEW", state->manual_deskew);
-    fill(renderer, (SDL_Rect){445, 594, 112, 24}, rgb(11, 20, 34));
-    outline(renderer, (SDL_Rect){445, 594, 112, 24}, rgb(58, 82, 109));
-    text(renderer, 452, 601, state->deskew_angle, 1,
+    option(renderer, MANUAL_ROW, "MANUAL DESKEW", state->manual_deskew);
+
+    /* Angle input box (degrees), next to the manual deskew checkbox. */
+    fill(renderer, ANGLE_BOX, rgb(11, 20, 34));
+    outline(renderer, ANGLE_BOX, rgb(58, 82, 109));
+    text(renderer, ANGLE_BOX.x + 8, ANGLE_BOX.y + 9, state->deskew_angle, 1,
         state->editing_angle ? rgb(98, 199, 175) : rgb(189, 203, 220));
-    option(renderer, 625, 594, "AUTO DESKEW", state->automatic_deskew);
-    option(renderer, 280, 630, "NOISE REDUCTION", state->noise_reduction);
-    option(renderer, 625, 630, "CONTRAST BOOST",
+    text(renderer, 350, 599, "DEG CLOCKWISE", 1, rgb(130, 150, 172));
+
+    option(renderer, AUTO_ROW, "AUTO DESKEW", state->automatic_deskew);
+    option(renderer, NOISE_ROW, "NOISE REDUCTION", state->noise_reduction);
+    option(renderer, CONTRAST_ROW, "CONTRAST BOOST",
         state->contrast_enhancement);
-    if (state->level == 3) {
-        text(renderer, 286, 662, "LEVEL 3 DETECTION OPTIONS", 1,
-            rgb(106, 187, 239));
-        option(renderer, 280, 686, "MULTI-COLUMN WORDS",
-            state->multiple_columns);
-        option(renderer, 625, 686, "BORDERLESS GRID",
-            state->borderless_grid);
-        option(renderer, 280, 722, "IGNORE SURROUNDING CONTENT",
-            state->surrounding_content);
-    } else {
-        text(renderer, 286, 686, "LEVEL 2 ADDS ROTATION, NOISE, BLUR,",
-            1, rgb(164, 181, 201));
-        text(renderer, 286, 707, "AND POOR CONTRAST TO LEVEL 1 INPUTS",
-            1, rgb(164, 181, 201));
-    }
 }
 
+/* Right column: recognized grid and word list (placeholders for now). */
 static void draw_results(SDL_Renderer *renderer)
 {
     int row;
     int column;
 
     /*
-     * The recognizer should produce letters for both grid cells and word-list
-     * crops. Keep confidence/editing UI here, after the common NN inference.
+     * TODO: draw the recognized letters in the cells, then the solved
+     * grid with each found word circled (first to last letter).
      */
-    panel(renderer, (SDL_Rect){1000, 110, 416, 410}, "GRID / LETTERS");
-    text(renderer, 1020, 164, "NN RECOGNITION OUTPUT", 1,
-        rgb(117, 141, 167));
+    panel(renderer, (SDL_Rect){1000, 110, 416, 410}, "GRID");
     for (row = 0; row <= 7; row++)
         fill(renderer, (SDL_Rect){1040, 195 + row * 34, 239, 1},
             rgb(55, 79, 104));
     for (column = 0; column <= 7; column++)
         fill(renderer, (SDL_Rect){1040 + column * 34, 195, 1, 239},
             rgb(55, 79, 104));
-    text(renderer, 1020, 465, "EDITABLE GRID PLACEHOLDER", 1,
-        rgb(103, 126, 151));
 
+    /* TODO: draw the recognized words, one per line. */
     panel(renderer, (SDL_Rect){1000, 536, 416, 254}, "WORD LIST");
-    text(renderer, 1020, 590, "SHARED OCR WORD OUTPUT", 1,
-        rgb(117, 141, 167));
     for (row = 0; row < 4; row++)
-        fill(renderer, (SDL_Rect){1020, 620 + row * 27, 180 - row * 18, 6},
+        fill(renderer, (SDL_Rect){1020, 600 + row * 27, 180 - row * 18, 6},
             rgb(42, 59, 79));
-    text(renderer, 1020, 754, "WORD CROPS FEED THE SAME NN", 1,
-        rgb(103, 126, 151));
 }
 
-static void draw_workflow(SDL_Renderer *renderer)
-{
-    panel(renderer, (SDL_Rect){24, 324, 232, 466}, "SHARED PIPELINE");
-    text(renderer, 42, 380, "1 LOAD AND PREP IMAGE", 1,
-        rgb(188, 203, 220));
-    text(renderer, 42, 430, "2 LOCATE GRID AND WORDS", 1,
-        rgb(188, 203, 220));
-    text(renderer, 42, 480, "3 SPLIT INTO LETTER CROPS", 1,
-        rgb(188, 203, 220));
-    text(renderer, 42, 530, "4 SHARED NN RECOGNITION", 1,
-        rgb(108, 187, 239));
-    text(renderer, 42, 580, "5 BUILD GRID AND WORDS", 1,
-        rgb(188, 203, 220));
-    text(renderer, 42, 630, "6 CALL COMMAND-LINE SOLVER", 1,
-        rgb(188, 203, 220));
-    text(renderer, 42, 710, "UI PLACEHOLDERS ONLY", 1,
-        rgb(106, 181, 230));
-}
-
+/* Bottom bar: status message and the action buttons. */
 static void draw_footer(SDL_Renderer *renderer, const UiState *state)
 {
     fill(renderer, (SDL_Rect){0, 806, WINDOW_WIDTH, 94}, rgb(12, 20, 34));
@@ -453,23 +596,23 @@ static void draw_footer(SDL_Renderer *renderer, const UiState *state)
         rgb(39, 57, 78));
     text(renderer, 28, 824, "STATUS", 1, rgb(97, 180, 226));
     text(renderer, 28, 847, state->status, 1, rgb(188, 204, 221));
-    button(renderer, (SDL_Rect){1060, 818, 160, 44}, "RUN OCR", 1);
-    button(renderer, (SDL_Rect){1232, 818, 184, 44}, "SOLVE GRID", 0);
+    button(renderer, SAVE_BUTTON, "SAVE IMAGE", 0);
+    button(renderer, RUN_BUTTON, "RUN OCR", 1);
+    button(renderer, SOLVE_BUTTON, "SOLVE GRID", 0);
 }
 
+/* Draws one full frame: background, title, every panel, then presents. */
 void ui_render(SDL_Renderer *renderer, const UiState *state)
 {
     SDL_SetRenderDrawColor(renderer, 9, 15, 27, 255);
     SDL_RenderClear(renderer);
     fill(renderer, (SDL_Rect){0, 0, WINDOW_WIDTH, 90}, rgb(15, 25, 42));
     text(renderer, 28, 18, "WORD SEARCH OCR", 4, rgb(238, 245, 252));
-    text(renderer, 30, 66, "SHARED RECOGNITION WORKSPACE", 1,
+    text(renderer, 30, 66, "LOAD, CLEAN, RECOGNIZE, SOLVE", 1,
         rgb(133, 156, 182));
-    draw_levels(renderer, state);
     draw_image_panel(renderer, state);
     draw_options(renderer, state);
     draw_results(renderer);
-    draw_workflow(renderer);
     draw_footer(renderer, state);
     SDL_RenderPresent(renderer);
 }

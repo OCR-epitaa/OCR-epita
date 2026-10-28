@@ -3,6 +3,9 @@
 
 #include "window.h"
 
+
+
+
 typedef struct
 {
     /* Selects input difficulty, not a model or recognition implementation. */
@@ -23,13 +26,22 @@ typedef struct
     char deskew_angle[16];
     /* Short UI feedback; detailed failures belong to processing modules. */
     char status[160];
+
+    SDL_Renderer *renderer;  /* used to create the preview texture */
+    SDL_Texture *preview;    /* loaded image, NULL until one is loaded */
+    SDL_Surface *source;     /* original pixels, never modified */
+    SDL_Surface *current;    /* source after rotation, shown and saved */
+    int image_w;             /* size of the loaded image in pixels */
+    int image_h;
+
 } UiState;
 
 /*
  * Connect a single shared OCR pipeline to Run OCR. Do not select or duplicate
  * the neural-network recognizer by difficulty level.
  */
-void ui_initialize(UiState *state);
+void ui_initialize(UiState *state, SDL_Renderer *renderer);
+void ui_destroy(UiState *state);
 void ui_handle_event(UiState *state, const SDL_Event *event);
 void ui_render(SDL_Renderer *renderer, const UiState *state);
 

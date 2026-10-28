@@ -20,7 +20,7 @@ int main(void)
         return 1;
     }
 
-    ui_initialize(&state);
+    ui_initialize(&state, renderer);
     SDL_StartTextInput();
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -37,7 +37,8 @@ int main(void)
         ui_render(renderer, &state);
         SDL_Delay(1000 / 60);
     }
-
+    
+    ui_destroy(&state);  
     SDL_StopTextInput();
     terminate(window, renderer);
     return 0;
