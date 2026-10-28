@@ -24,9 +24,9 @@ int automatic_threshold_calculator(const struct Image *img);
 struct Image *image_binarize(const struct Image *img, int threshold); 
 // si la valeur de gris est sous le threshold, le pixel de result sera noir et blanc sinon
 
-struct Image *image_crop(const Image *img, int x, int y, int w, int h); 
+struct Image *image_crop(const struct Image *img, int x, int y, int w, int h); 
 // prend une image, les coordonnées x, y d'un point de l'image, une largeur et une hauteur de taille de morceau de l'image et renvoie ce morceau de l'image
-struct Image *image_rotate(const Image *img, double angle_deg); 
+struct Image *image_rotate(const struct Image *img, double angle_deg); 
 // manual rotation around the center of img of angle angle_deg in degrees
 
 
