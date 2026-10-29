@@ -1,6 +1,5 @@
 #include "../include/images.h"
 #include <SDL2/SDL_image.h>
-#include <ctype.h>
 #include <err.h>
 #include <math.h>
 #include <stdio.h>
@@ -80,42 +79,4 @@ SDL_Surface *surface_rotate(const SDL_Surface *src, double degrees)
 int surface_save(SDL_Surface *image, const char *path)
 {
     return IMG_SavePNG(image, path);
-}
-
-/*
- * Cleans a pasted path, in place:
- * - removes surrounding spaces, newlines and quotes
- * - removes a leading "file://"
- * - decodes %XX escapes (for example %20 is a space)
- */
-void surface_clean_path(char *path)
-{
-    char *start = path;
-    size_t length;
-    size_t in;
-    size_t out = 0;
-
-    while (isspace((unsigned char)*start) || *start == '"' ||
-            *start == '\'')
-        start++;
-    if (strncmp(start, "file://", 7) == 0)
-        start += 7;
-    length = strlen(start);
-    while (length > 0 && (isspace((unsigned char)start[length - 1]) ||
-            start[length - 1] == '"' || start[length - 1] == '\''))
-        length--;
-
-    /* Writing never gets ahead of reading, so this is safe in place. */
-    for (in = 0; in < length; in++) {
-        if (start[in] == '%' && in + 2 < length &&
-                isxdigit((unsigned char)start[in + 1]) &&
-                isxdigit((unsigned char)start[in + 2])) {
-            char hex[3] = {start[in + 1], start[in + 2], '\0'};
-            path[out++] = (char)strtol(hex, NULL, 16);
-            in += 2;
-        } else {
-            path[out++] = start[in];
-        }
-    }
-    path[out] = '\0';
 }

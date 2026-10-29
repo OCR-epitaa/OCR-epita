@@ -12,7 +12,4 @@ SDL_Surface *surface_rotate(const SDL_Surface *src, double degrees);
 /* Saves a surface as PNG. Returns 0 on success. */
 int surface_save(SDL_Surface *image, const char *path);
 
-/* Cleans a pasted path in place (quotes, file://, %XX escapes). */
-void surface_clean_path(char *path);
-
 #endif

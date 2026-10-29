@@ -32,10 +32,10 @@ static void outline(SDL_Renderer *renderer, SDL_Rect rect, SDL_Color color)
 static TTF_Font *font_for_scale(const UiState *state, int scale)
 {
     if (scale >= 4)
-        return state->font_large;
+        return state->resources.font_large;
     if (scale >= 2)
-        return state->font_medium;
-    return state->font_small;
+        return state->resources.font_medium;
+    return state->resources.font_small;
 }
 
 static int font_height(const UiState *state, int scale)
@@ -123,30 +123,30 @@ static void draw_preview(SDL_Renderer *renderer, const UiState *state)
     fill(renderer, PREVIEW_BOX, rgb(12, 22, 37));
     outline(renderer, PREVIEW_BOX, rgb(44, 66, 91));
 
-    if (state->preview == NULL) {
+    if (state->image.preview == NULL) {
         text(renderer, state, 414, 348, "NO IMAGE LOADED", 2,
             rgb(169, 190, 212));
         return;
     }
     {
         /* Math shit */
-        float scale_x = (float)PREVIEW_BOX.w / (float)state->image_w;
-        float scale_y = (float)PREVIEW_BOX.h / (float)state->image_h;
+        float scale_x = (float)PREVIEW_BOX.w / (float)state->image.image_w;
+        float scale_y = (float)PREVIEW_BOX.h / (float)state->image.image_h;
         float scale = scale_x < scale_y ? scale_x : scale_y;
         SDL_Rect target;
 
-        target.w = (int)((float)state->image_w * scale);
-        target.h = (int)((float)state->image_h * scale);
+        target.w = (int)((float)state->image.image_w * scale);
+        target.h = (int)((float)state->image.image_h * scale);
         target.x = PREVIEW_BOX.x + (PREVIEW_BOX.w - target.w) / 2;
         target.y = PREVIEW_BOX.y + (PREVIEW_BOX.h - target.h) / 2;
-        SDL_RenderCopy(renderer, state->preview, NULL, &target);
+        SDL_RenderCopy(renderer, state->image.preview, NULL, &target);
     }
 }
 
 /* Path box and image preview. */
 static void draw_image_panel(SDL_Renderer *renderer, const UiState *state)
 {
-    const char *path = state->image_path;
+    const char *path = state->input.image_path;
     size_t length = strlen(path);
     SDL_Rect clip = {50, 174, 908, 22};
 
@@ -158,9 +158,9 @@ static void draw_image_panel(SDL_Renderer *renderer, const UiState *state)
     if (length > 100)
         path += length - 100;
     SDL_RenderSetClipRect(renderer, &clip);
-    text(renderer, state, 50, 179, state->image_path[0] == '\0' ?
-        "CLICK TO TYPE A PATH OR PRESS CTRL+V TO PASTE ONE" : path, 1,
-        state->editing_path ? rgb(98, 199, 175) : rgb(173, 192, 213));
+    text(renderer, state, 50, 179, state->input.image_path[0] == '\0' ?
+        "CLICK TO TYPE A PATH" : path, 1,
+        state->input.editing_path ? rgb(98, 199, 175) : rgb(173, 192, 213));
     SDL_RenderSetClipRect(renderer, NULL);
 
     draw_preview(renderer, state);
@@ -174,25 +174,25 @@ static void draw_options(SDL_Renderer *renderer, const UiState *state)
         rgb(106, 187, 239));
 
     option(renderer, state, MANUAL_ROW, "MANUAL DESKEW",
-        state->manual_deskew);
+        state->options.manual_deskew);
 
     /* Angle input box (degrees), next to the manual deskew checkbox. */
     fill(renderer, ANGLE_BOX, rgb(11, 20, 34));
     outline(renderer, ANGLE_BOX, rgb(58, 82, 109));
     text(renderer, state, ANGLE_BOX.x + 8, ANGLE_BOX.y + 9,
-        state->deskew_angle, 1,
-        state->editing_angle ? rgb(98, 199, 175) : rgb(189, 203, 220));
-    text(renderer, state, 350, 599, "DEG CLOCKWISE", 1,
+        state->input.deskew_angle, 1,
+        state->input.editing_angle ? rgb(98, 199, 175) : rgb(189, 203, 220));
+    text(renderer, state, 310, 600, "DEG CLOCKWISE", 1,
         rgb(130, 150, 172));
 
     option(renderer, state, AUTO_ROW, "AUTO DESKEW",
-        state->automatic_deskew);
+        state->options.automatic_deskew);
     option(renderer, state, NOISE_ROW, "NOISE REDUCTION",
-        state->noise_reduction);
+        state->options.noise_reduction);
     option(renderer, state, CONTRAST_ROW, "CONTRAST BOOST",
-        state->contrast_enhancement);
+        state->options.contrast_enhancement);
     option(renderer, state, GRAYSCALE_ROW, "GRAYSCALE CONVERSION",
-        state->grayscale);
+        state->options.grayscale);
     
 }
 
@@ -205,13 +205,13 @@ static void draw_results(SDL_Renderer *renderer, const UiState *state)
     int column;
 
     panel(renderer, state, (SDL_Rect){1000, 110, 416, 410}, "GRID");
-    if (state->grid_rows == 0 || state->grid_columns == 0) {
+    if (state->results.grid_rows == 0 || state->results.grid_columns == 0) {
         text(renderer, state, 1050, 270, "OCR BACKEND NOT CONNECTED", 1,
             rgb(130, 150, 172));
     } else {
-        for (row = 0; row < state->grid_rows; row++) {
-            for (column = 0; column < state->grid_columns; column++) {
-                char letter[2] = {state->grid[row * state->grid_columns +
+        for (row = 0; row < state->results.grid_rows; row++) {
+            for (column = 0; column < state->results.grid_columns; column++) {
+                char letter[2] = {state->results.grid[row * state->results.grid_columns +
                     column], '\0'};
                 SDL_Rect cell = {
                     grid_area.x + column * 24,
@@ -227,22 +227,22 @@ static void draw_results(SDL_Renderer *renderer, const UiState *state)
     }
 
     panel(renderer, state, (SDL_Rect){1000, 536, 416, 254}, "WORD LIST");
-    if (state->word_count == 0) {
+    if (state->results.word_count == 0) {
         text(renderer, state, 1020, 600, "NO WORDS RECOGNIZED", 1,
             rgb(130, 150, 172));
     } else {
-        size_t visible_words = state->word_count < 7 ?
-            state->word_count : 7;
+        size_t visible_words = state->results.word_count < 7 ?
+            state->results.word_count : 7;
         size_t index;
 
         for (index = 0; index < visible_words; index++)
             text(renderer, state, 1020, 594 + (int)index * 24,
-                state->words[index], 1, rgb(189, 203, 220));
-        if (state->word_count > visible_words) {
+                state->results.words[index], 1, rgb(189, 203, 220));
+        if (state->results.word_count > visible_words) {
             char more[32];
 
             snprintf(more, sizeof(more), "+ %lu MORE",
-                (unsigned long)(state->word_count - visible_words));
+                (unsigned long)(state->results.word_count - visible_words));
             text(renderer, state, 1020, 762, more, 1, rgb(130, 150, 172));
         }
     }
@@ -255,7 +255,7 @@ static void draw_footer(SDL_Renderer *renderer, const UiState *state)
     fill(renderer, (SDL_Rect){24, 806, WINDOW_WIDTH - 48, 1},
         rgb(39, 57, 78));
     text(renderer, state, 28, 824, "STATUS", 1, rgb(97, 180, 226));
-    text(renderer, state, 28, 847, state->status, 1, rgb(188, 204, 221));
+    text(renderer, state, 28, 847, state->input.status, 1, rgb(188, 204, 221));
     button(renderer, state, SAVE_BUTTON, "SAVE IMAGE", 0);
     button(renderer, state, RUN_BUTTON, "RUN OCR", 1);
     button(renderer, state, SOLVE_BUTTON, "SOLVE GRID", 0);

@@ -20,15 +20,15 @@ static int hit(SDL_Rect rect, int pointer_x, int pointer_y)
 static void status(UiState *state, const char *message)
 {
     /* snprintf truncates instead of overflowing the 160-byte buffer. */
-    snprintf(state->status, sizeof(state->status), "%s", message);
+    snprintf(state->input.status, sizeof(state->input.status), "%s", message);
 }
 
 static int load_ui_fonts(UiState *state)
 {
     static const char *const font_path = "advanced-pixel-7.ttf";
-    TTF_Font *small = TTF_OpenFont(font_path, 10);
-    TTF_Font *medium = TTF_OpenFont(font_path, 14);
-    TTF_Font *large = TTF_OpenFont(font_path, 24);
+    TTF_Font *small = TTF_OpenFont(font_path, 18);
+    TTF_Font *medium = TTF_OpenFont(font_path, 26);
+    TTF_Font *large = TTF_OpenFont(font_path, 32);
 
     if (small == NULL || medium == NULL || large == NULL) {
         if (small != NULL)
@@ -40,21 +40,21 @@ static int load_ui_fonts(UiState *state)
         return -1;
     }
 
-    state->font_small = small;
-    state->font_medium = medium;
-    state->font_large = large;
+    state->resources.font_small = small;
+    state->resources.font_medium = medium;
+    state->resources.font_large = large;
     return 0;
 }
 
 /*
- * Rebuilds the preview texture from state->current.
+ * Rebuilds the preview texture from state->image.current.
  * Returns 0 on success, -1 on failure (the status bar says why).
  * On failure the old preview is kept, so the screen never goes blank.
  */
 static int refresh_preview(UiState *state)
 {
     /* Surface that will be uploaded to the GPU: current, or its gray copy. */
-    SDL_Surface *preview_surface = state->current;
+    SDL_Surface *preview_surface = state->image.current;
     SDL_Surface *grayscale_surface = NULL;
     struct Image *grayscale_image = NULL;
     SDL_Texture *texture;
@@ -63,12 +63,12 @@ static int refresh_preview(UiState *state)
 
     /* Nothing loaded yet: not an error, there is just nothing to show. */
     /* DEFAULT STATE */
-    if (state->current == NULL)
+    if (state->image.current == NULL)
         return 0;
-    if (state->grayscale) {
+    if (state->options.grayscale) {
         /* Step 1: compute the gray values with the shared image module,
          * so the preview matches exactly what OCR and Save will use. */
-        grayscale_image = image_from_surface(state->current);
+        grayscale_image = image_from_surface(state->image.current);
         if (grayscale_image == NULL) {
             status(state, "COULD NOT CONVERT IMAGE TO GRAYSCALE");
             return -1;
@@ -113,7 +113,7 @@ static int refresh_preview(UiState *state)
             SDL_UnlockSurface(grayscale_surface);
         preview_surface = grayscale_surface;
     }
-    texture = SDL_CreateTextureFromSurface(state->renderer,
+    texture = SDL_CreateTextureFromSurface(state->resources.renderer,
         preview_surface);
     /* The texture holds its own copy of the pixels, so the temporary
      * gray surface and gray image can be freed right away. */
@@ -126,22 +126,22 @@ static int refresh_preview(UiState *state)
         return -1;
     }
     /* Swap only after success: destroy the old texture, keep the new. */
-    if (state->preview != NULL)
-        SDL_DestroyTexture(state->preview);
-    state->preview = texture;
-    state->image_w = state->current->w;
-    state->image_h = state->current->h;
+    if (state->image.preview != NULL)
+        SDL_DestroyTexture(state->image.preview);
+    state->image.preview = texture;
+    state->image.image_w = state->image.current->w;
+    state->image.image_h = state->image.current->h;
     return 0;
 }
 
 /* Empties the displayed grid and word list (the OCR image is kept). */
 static void clear_ocr_results(UiState *state)
 {
-    state->grid_rows = 0;
-    state->grid_columns = 0;
-    state->word_count = 0;
-    memset(state->grid, 0, sizeof(state->grid));
-    memset(state->words, 0, sizeof(state->words));
+    state->results.grid_rows = 0;
+    state->results.grid_columns = 0;
+    state->results.word_count = 0;
+    memset(state->results.grid, 0, sizeof(state->results.grid));
+    memset(state->results.words, 0, sizeof(state->results.words));
 }
 
 /*
@@ -151,9 +151,9 @@ static void clear_ocr_results(UiState *state)
 static void clear_ocr_data(UiState *state)
 {
     clear_ocr_results(state);
-    if (state->ocr_image != NULL)
-        image_free(state->ocr_image);
-    state->ocr_image = NULL;
+    if (state->results.ocr_image != NULL)
+        image_free(state->results.ocr_image);
+    state->results.ocr_image = NULL;
 }
 
 /*
@@ -180,26 +180,26 @@ int ui_set_ocr_results(UiState *state, int rows, int columns,
     }
 
     clear_ocr_results(state);
-    state->grid_rows = rows;
-    state->grid_columns = columns;
+    state->results.grid_rows = rows;
+    state->results.grid_columns = columns;
     /* The input is packed (stride = columns) but the UI grid has a fixed
      * stride of UI_MAX_GRID_SIZE, so copy it one row at a time. */
     for (row = 0; row < rows; row++) {
-        memcpy(state->grid + row * UI_MAX_GRID_SIZE,
+        memcpy(state->results.grid + row * UI_MAX_GRID_SIZE,
             letters + row * columns, (size_t)columns);
     }
     for (index = 0; index < word_count; index++)
-        snprintf(state->words[index], sizeof(state->words[index]), "%s",
+        snprintf(state->results.words[index], sizeof(state->results.words[index]), "%s",
             words[index]);
-    state->word_count = word_count;
+    state->results.word_count = word_count;
     status(state, "OCR RESULTS DISPLAYED");
     return 0;
 }
 
 /*
- * Builds state->current from the original image: rotated by the typed
+ * Builds state->image.current from the original image: rotated by the typed
  * angle if MANUAL DESKEW is ticked, unrotated otherwise.
- * It always starts from state->source, so rotations never accumulate
+ * It always starts from state->image.source, so rotations never accumulate
  * and never degrade the image.
  */
 static void apply_rotation(UiState *state)
@@ -208,20 +208,20 @@ static void apply_rotation(UiState *state)
     SDL_Surface *rotated;
     char message[64];
 
-    if (state->source == NULL)
+    if (state->image.source == NULL)
         return;
     /* strtod stops at the first invalid char: "-" or "" gives 0.0. */
-    if (state->manual_deskew)
-        angle = strtod(state->deskew_angle, NULL);
-    rotated = surface_rotate(state->source, angle);
+    if (state->options.manual_deskew)
+        angle = strtod(state->input.deskew_angle, NULL);
+    rotated = surface_rotate(state->image.source, angle);
     if (rotated == NULL) {
         status(state, "COULD NOT ROTATE IMAGE");
         return;
     }
     /* Free the previous result only once the new one exists. */
-    if (state->current != NULL)
-        SDL_FreeSurface(state->current);
-    state->current = rotated;
+    if (state->image.current != NULL)
+        SDL_FreeSurface(state->image.current);
+    state->image.current = rotated;
     /* On failure refresh_preview already set an error message: do not
      * overwrite it with "ROTATION APPLIED". */
     if (refresh_preview(state) != 0)
@@ -232,7 +232,7 @@ static void apply_rotation(UiState *state)
 }
 
 /*
- * Loads state->image_path as the new original image.
+ * Loads state->input.image_path as the new original image.
  * Resets the OCR data, since it belonged to the previous image.
  */
 static void load_image(UiState *state)
@@ -240,24 +240,24 @@ static void load_image(UiState *state)
     SDL_Surface *loaded;
     char message[96];
 
-    if (state->image_path[0] == '\0') {
+    if (state->input.image_path[0] == '\0') {
         status(state, "NO IMAGE PATH GIVEN");
         return;
     }
-    loaded = surface_load(state->image_path);
+    loaded = surface_load(state->input.image_path);
     if (loaded == NULL) {
         /* The old image stays loaded: a typo must not lose the work. */
         status(state, "COULD NOT LOAD IMAGE - CHECK THE PATH");
         return;
     }
-    if (state->source != NULL)
-        SDL_FreeSurface(state->source);
-    state->source = loaded;
+    if (state->image.source != NULL)
+        SDL_FreeSurface(state->image.source);
+    state->image.source = loaded;
     clear_ocr_data(state);
-    /* Builds state->current and the preview from the new source. */
+    /* Builds state->image.current and the preview from the new source. */
     apply_rotation(state);
     snprintf(message, sizeof(message), "IMAGE LOADED - %dX%d",
-        state->source->w, state->source->h);
+        state->image.source->w, state->image.source->h);
     status(state, message);
 }
 
@@ -269,12 +269,12 @@ static void save_current_image(UiState *state)
 {
     char message[96];
 
-    if (state->current == NULL) {
+    if (state->image.current == NULL) {
         status(state, "NOTHING TO SAVE - LOAD AN IMAGE FIRST");
-    } else if (state->grayscale) {
-        /* Grayscale is only applied to a copy: state->current stays in
+    } else if (state->options.grayscale) {
+        /* Grayscale is only applied to a copy: state->image.current stays in
          * color, so toggling the option off restores the colors. */
-        struct Image *grayscale = image_from_surface(state->current);
+        struct Image *grayscale = image_from_surface(state->image.current);
 
         if (grayscale == NULL) {
             status(state, "COULD NOT CONVERT IMAGE TO GRAYSCALE");
@@ -287,7 +287,7 @@ static void save_current_image(UiState *state)
                 SAVE_FILE);
             status(state, message);
         }
-    } else if (surface_save(state->current, SAVE_FILE) != 0) {
+    } else if (surface_save(state->image.current, SAVE_FILE) != 0) {
         status(state, "COULD NOT SAVE IMAGE");
     } else {
         snprintf(message, sizeof(message), "SAVED TO %s", SAVE_FILE);
@@ -298,7 +298,7 @@ static void save_current_image(UiState *state)
 /*
  * Preprocessing chain run by the Run OCR button:
  * current image -> grayscale -> automatic threshold -> binary image.
- * The result is stored in state->ocr_image for the next stages
+ * The result is stored in state->results.ocr_image for the next stages
  * (grid detection, letter recognition), which are not connected yet.
  */
 static void run_preprocessing(UiState *state)
@@ -307,13 +307,13 @@ static void run_preprocessing(UiState *state)
     struct Image *binary;
     int threshold;
 
-    if (state->current == NULL) {
+    if (state->image.current == NULL) {
         status(state, "LOAD AN IMAGE FIRST");
         return;
     }
     /* Old results would no longer match the image being processed. */
     clear_ocr_data(state);
-    grayscale = image_from_surface(state->current);
+    grayscale = image_from_surface(state->image.current);
     if (grayscale == NULL) {
         status(state, "COULD NOT CONVERT IMAGE FOR OCR");
         return;
@@ -335,7 +335,7 @@ static void run_preprocessing(UiState *state)
 
     /* Ownership of binary moves to the state: freed by clear_ocr_data
      * or ui_destroy. */
-    state->ocr_image = binary;
+    state->results.ocr_image = binary;
     status(state, "PREPROCESSING READY - OCR NOT CONNECTED");
 }
 
@@ -349,13 +349,13 @@ void ui_initialize(UiState *state, SDL_Renderer *renderer)
     /* Zeroing sets every pointer to NULL and every flag to 0, which is
      * what the rest of the code assumes ("not loaded yet"). */
     memset(state, 0, sizeof(*state));
-    state->renderer = renderer;
-    snprintf(state->deskew_angle, sizeof(state->deskew_angle), "0.0");
+    state->resources.renderer = renderer;
+    snprintf(state->input.deskew_angle, sizeof(state->input.deskew_angle), "0.0");
 
     /* Enables the PNG and JPG decoders of SDL_image. */
     IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
     if (TTF_Init() == 0) {
-        state->ttf_initialized = 1;
+        state->resources.ttf_initialized = 1;
         if (load_ui_fonts(state) != 0) {
             status(state, "FONT NOT FOUND - CHECK ADVANCED-PIXEL-7.TTF");
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -378,60 +378,60 @@ void ui_initialize(UiState *state, SDL_Renderer *renderer)
 
     /* Without this, SDL does not send SDL_TEXTINPUT events. */
     SDL_StartTextInput();
-    if (state->font_small != NULL)
-        status(state, "READY - PASTE OR TYPE AN IMAGE PATH");
+    if (state->resources.font_small != NULL)
+        status(state, "READY - TYPE AN IMAGE PATH");
 }
 
 /* Frees everything ui_initialize and load_image created. */
 void ui_destroy(UiState *state)
 {
-    if (state->preview != NULL)
-        SDL_DestroyTexture(state->preview);
-    if (state->current != NULL)
-        SDL_FreeSurface(state->current);
-    if (state->source != NULL)
-        SDL_FreeSurface(state->source);
-    if (state->ocr_image != NULL)
-        image_free(state->ocr_image);
-    if (state->font_small != NULL)
-        TTF_CloseFont(state->font_small);
-    if (state->font_medium != NULL)
-        TTF_CloseFont(state->font_medium);
-    if (state->font_large != NULL)
-        TTF_CloseFont(state->font_large);
-    if (state->ttf_initialized)
+    if (state->image.preview != NULL)
+        SDL_DestroyTexture(state->image.preview);
+    if (state->image.current != NULL)
+        SDL_FreeSurface(state->image.current);
+    if (state->image.source != NULL)
+        SDL_FreeSurface(state->image.source);
+    if (state->results.ocr_image != NULL)
+        image_free(state->results.ocr_image);
+    if (state->resources.font_small != NULL)
+        TTF_CloseFont(state->resources.font_small);
+    if (state->resources.font_medium != NULL)
+        TTF_CloseFont(state->resources.font_medium);
+    if (state->resources.font_large != NULL)
+        TTF_CloseFont(state->resources.font_large);
+    if (state->resources.ttf_initialized)
         TTF_Quit();
     /* Reset the pointers so a second call cannot double-free.
      * (ocr_image is not reset here, unlike the others.) */
-    state->preview = NULL;
-    state->current = NULL;
-    state->source = NULL;
-    state->ocr_image = NULL;
-    state->font_small = NULL;
-    state->font_medium = NULL;
-    state->font_large = NULL;
+    state->image.preview = NULL;
+    state->image.current = NULL;
+    state->image.source = NULL;
+    state->results.ocr_image = NULL;
+    state->resources.font_small = NULL;
+    state->resources.font_medium = NULL;
+    state->resources.font_large = NULL;
     IMG_Quit();
 }
 
 /* An empty angle field makes no sense, so fall back to 0.0 degrees. */
 static void restore_angle_default(UiState *state)
 {
-    if (state->deskew_angle[0] == '\0')
-        snprintf(state->deskew_angle, sizeof(state->deskew_angle), "0.0");
+    if (state->input.deskew_angle[0] == '\0')
+        snprintf(state->input.deskew_angle, sizeof(state->input.deskew_angle), "0.0");
 }
 
 /* Appends typed text to the image path, never overflowing the buffer. */
 static void edit_image_path(UiState *state, const SDL_Event *event)
 {
-    size_t used = strlen(state->image_path);
+    size_t used = strlen(state->input.image_path);
     /* Free space left, keeping 1 byte for the final '\0'. */
-    size_t limit = sizeof(state->image_path) - used - 1;
+    size_t limit = sizeof(state->input.image_path) - used - 1;
     size_t input_length = strlen(event->text.text);
     /* Copy as much as fits, cut the rest. */
     size_t count = input_length < limit ? input_length : limit;
 
-    memcpy(state->image_path + used, event->text.text, count);
-    state->image_path[used + count] = '\0';
+    memcpy(state->input.image_path + used, event->text.text, count);
+    state->input.image_path[used + count] = '\0';
     if (count < input_length)
         status(state, "IMAGE PATH LENGTH LIMIT REACHED");
 }
@@ -443,16 +443,16 @@ static void edit_image_path(UiState *state, const SDL_Event *event)
  */
 static void edit_angle(UiState *state, const SDL_Event *event)
 {
-    size_t used = strlen(state->deskew_angle);
+    size_t used = strlen(state->input.deskew_angle);
     size_t index;
 
     for (index = 0; event->text.text[index] != '\0'; index++) {
         char character = event->text.text[index];
         /* "used + 1 < size" keeps room for the '\0'. */
         if (strchr("0123456789.-", character) != NULL &&
-                used + 1 < sizeof(state->deskew_angle)) {
-            state->deskew_angle[used++] = character;
-            state->deskew_angle[used] = '\0';
+                used + 1 < sizeof(state->input.deskew_angle)) {
+            state->input.deskew_angle[used++] = character;
+            state->input.deskew_angle[used] = '\0';
         }
     }
 }
@@ -461,38 +461,13 @@ static void edit_angle(UiState *state, const SDL_Event *event)
 static void handle_text(UiState *state, const SDL_Event *event)
 {
     /* At most one field is edited at a time (see handle_click). */
-    if (event->type == SDL_TEXTINPUT && state->editing_path)
+    if (event->type == SDL_TEXTINPUT && state->input.editing_path)
         edit_image_path(state, event);
-    else if (event->type == SDL_TEXTINPUT && state->editing_angle)
+    else if (event->type == SDL_TEXTINPUT && state->input.editing_angle)
         edit_angle(state, event);
 }
 
-/*
- * Ctrl+V (Cmd+V on macOS): replaces the path with the clipboard text,
- * cleans it, and loads the image right away. ( good shit i stole )
- */
-static void paste_path(UiState *state)
-{
-    /* SDL allocates this string: it must be released with SDL_free. */
-    char *clipboard = SDL_GetClipboardText();
-
-    /* Refuse a clipboard that would not fit, instead of truncating a
-     * path (a cut path would point to the wrong file). */
-    if (clipboard == NULL || strlen(clipboard) >=
-            sizeof(state->image_path)) {
-        status(state, "CLIPBOARD EMPTY OR TOO LONG");
-    } else {
-        snprintf(state->image_path, sizeof(state->image_path), "%s",
-            clipboard);
-        /* Typically removes quotes/spaces added by "Copy as path". */
-        surface_clean_path(state->image_path);
-        state->editing_path = 0;
-        load_image(state);
-    }
-    SDL_free(clipboard);
-}
-
-/* Handles Ctrl+V, Enter (finish editing) and Backspace (delete). */
+/* Handles Enter (finish editing) and Backspace (delete). */
 static void handle_key(UiState *state, const SDL_Event *event)
 {
     SDL_Keycode key;
@@ -503,31 +478,28 @@ static void handle_key(UiState *state, const SDL_Event *event)
         return;
     key = event->key.keysym.sym;
 
-    /* Angle field first: it has its own Enter/Backspace and paste is
-     * not allowed there, hence the early return. */
-    if (state->editing_angle) {
-        length = strlen(state->deskew_angle);
+    /* Angle field first: it has its own Enter/Backspace, hence the
+     * early return. */
+    if (state->input.editing_angle) {
+        length = strlen(state->input.deskew_angle);
         if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
-            state->editing_angle = 0;
+            state->input.editing_angle = 0;
             restore_angle_default(state);
             apply_rotation(state);
         } else if (key == SDLK_BACKSPACE && length > 0) {
-            state->deskew_angle[length - 1] = '\0';
+            state->input.deskew_angle[length - 1] = '\0';
         }
         return;
     }
 
-    /* KMOD_CTRL is Ctrl on Windows/Linux, KMOD_GUI is Cmd on macOS. */
-    if (key == SDLK_v && (event->key.keysym.mod & (KMOD_CTRL | KMOD_GUI))) {
-        paste_path(state);
-    } else if (state->editing_path) {
-        length = strlen(state->image_path);
+    if (state->input.editing_path) {
+        length = strlen(state->input.image_path);
         if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
-            state->editing_path = 0;
+            state->input.editing_path = 0;
             load_image(state);
         } else if (key == SDLK_BACKSPACE && length > 0) {
             /* Backspace just moves the end of the string back by one. */
-            state->image_path[length - 1] = '\0';
+            state->input.image_path[length - 1] = '\0';
         }
     }
 }
@@ -551,54 +523,54 @@ static void handle_click(UiState *state, const SDL_Event *event)
         return;
 
     /* Clicking away from the angle box finishes the edit and applies it. */
-    if (state->editing_angle) {
+    if (state->input.editing_angle) {
         restore_angle_default(state);
-        state->editing_angle = 0;
+        state->input.editing_angle = 0;
         apply_rotation(state);
     }
     /* Every click ends path editing; the PATH_BOX branch below turns it
      * back on if the click landed in the box. */
-    state->editing_path = 0;
+    state->input.editing_path = 0;
 
     if (hit(PATH_BOX, x, y)) {
-        state->editing_path = 1;
-        status(state, "TYPE OR PASTE A PATH, THEN PRESS ENTER");
+        state->input.editing_path = 1;
+        status(state, "TYPE A PATH, THEN PRESS ENTER");
 
     } else if (hit(ANGLE_BOX, x, y)) { /* Box where you enter value for angle*/
-        state->editing_angle = 1;
+        state->input.editing_angle = 1;
         /* Clear the field so the user types a fresh value. */
-        state->deskew_angle[0] = '\0';
+        state->input.deskew_angle[0] = '\0';
         status(state, "TYPE AN ANGLE IN DEGREES, THEN PRESS ENTER");
 
     } else if (hit(MANUAL_ROW, x, y)) { /* check box for manual angle*/
-        toggle(&state->manual_deskew);
+        toggle(&state->options.manual_deskew);
         apply_rotation(state);
 
     } else if (hit(AUTO_ROW, x, y)) {
-        toggle(&state->automatic_deskew);
+        toggle(&state->options.automatic_deskew);
 
     } else if (hit(NOISE_ROW, x, y)) {
-        toggle(&state->noise_reduction);
+        toggle(&state->options.noise_reduction);
 
     } else if (hit(CONTRAST_ROW, x, y)) {
-        toggle(&state->contrast_enhancement);
+        toggle(&state->options.contrast_enhancement);
 
     } else if (hit(SAVE_BUTTON, x, y)) {
         save_current_image(state);
 
     } else if (hit(GRAYSCALE_ROW, x, y)) {
-        toggle(&state->grayscale);
+        toggle(&state->options.grayscale);
         /* Only report the new mode if the preview was really rebuilt,
          * otherwise keep the error message set by refresh_preview. */
         if (refresh_preview(state) == 0)
-            status(state, state->grayscale ? "GRAYSCALE PREVIEW ON" :
+            status(state, state->options.grayscale ? "GRAYSCALE PREVIEW ON" :
                 "GRAYSCALE PREVIEW OFF");
 
     } else if (hit(RUN_BUTTON, x, y)) {
         /*
          * Single handoff to the recognition pipeline. Keep the UI free
          * of neural-network code: it only passes data in and shows the
-         * results. state->current holds the pixels to process.
+         * results. state->image.current holds the pixels to process.
          * - convert to grayscale / black and white
          * - apply the other preprocessing options
          * - locate the grid and the word list, then cut out letter crops

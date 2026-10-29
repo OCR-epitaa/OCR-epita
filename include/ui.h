@@ -11,13 +11,11 @@
 
 struct Image;
 
-
+/* ALL OPTIONS IN UI */
 typedef struct
 {
     /* Selects input difficulty, not a model or recognition implementation. */
     int level;
-    int editing_path;
-    int editing_angle;
     /* These options configure shared preprocessing/detection stages only. */
     int manual_deskew;
     int automatic_deskew;
@@ -26,27 +24,46 @@ typedef struct
     int multiple_columns;
     int borderless_grid;
     int surrounding_content;
+    int grayscale;
+} UiOptions;
+
+/* ALL INPUTS IN UI */
+typedef struct
+{
+    int editing_path;
+    int editing_angle;
     /* The UI collects an input path; image decoding belongs to the loader. */
     char image_path[512];
     /* Manual deskew input is forwarded to preprocessing, never to the NN. */
     /* deskew_angle = rotation angle */
     char deskew_angle[16];
-    /* Short UI feedback; ( in short its the logs that is in bottom left ) */
+    /* Short UI feedback shown at the bottom left. */
     char status[160];
+} UiInput;
 
-    SDL_Renderer *renderer;  /* used to create the preview texture */
+/* ALL IMAGES OPTION related to UI */
+typedef struct
+{
     SDL_Texture *preview;    /* loaded image, NULL until one is loaded */
-    TTF_Font *font_small;
-    TTF_Font *font_medium;
-    TTF_Font *font_large;
-    int ttf_initialized;
     SDL_Surface *source;     /* original pixels, never modified */
     SDL_Surface *current;    /* source after rotation, shown and saved */
     int image_w;             /* size of the loaded image in pixels */
     int image_h;
+} UiImage;
 
-    int grayscale;          /* whether to convert the image to grayscale */
+/* ALL UI RESSOURCES */
+typedef struct
+{
+    SDL_Renderer *renderer;  /* used to create the preview texture */
+    TTF_Font *font_small;
+    TTF_Font *font_medium;
+    TTF_Font *font_large;
+    int ttf_initialized;
+} UiResources;
 
+/* OCR RESULTS STORED FOR UI HERE */
+typedef struct
+{
     int grid_rows;
     int grid_columns;
     /* DONT HAVE YET but assuming we can (larping by Lucas apparently)*/
@@ -54,7 +71,16 @@ typedef struct
     char words[UI_MAX_WORDS][UI_MAX_WORD_LENGTH]; /* the list of words recognized*/
     size_t word_count;
     struct Image *ocr_image;
+} UiResults;
 
+/* ALL UI THINS HERE */
+typedef struct
+{
+    UiOptions options;
+    UiInput input;
+    UiImage image;
+    UiResources resources;
+    UiResults results;
 } UiState;
 
 /*
