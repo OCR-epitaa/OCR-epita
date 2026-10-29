@@ -170,8 +170,6 @@ static void draw_image_panel(SDL_Renderer *renderer, const UiState *state)
 static void draw_options(SDL_Renderer *renderer, const UiState *state)
 {
     panel(renderer, state, (SDL_Rect){24, 536, 960, 254}, "PREPROCESSING");
-    text(renderer, state, 40, 560, "CORRECT IMAGE DEFECTS BEFORE RECOGNITION", 1,
-        rgb(106, 187, 239));
 
     option(renderer, state, MANUAL_ROW, "MANUAL DESKEW",
         state->options.manual_deskew);
