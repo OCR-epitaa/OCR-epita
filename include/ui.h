@@ -3,6 +3,7 @@
 
 #include "window.h"
 #include <stddef.h>
+#include <SDL2/SDL_ttf.h>
 
 #define UI_MAX_GRID_SIZE 32
 #define UI_MAX_WORDS 32
@@ -28,12 +29,17 @@ typedef struct
     /* The UI collects an input path; image decoding belongs to the loader. */
     char image_path[512];
     /* Manual deskew input is forwarded to preprocessing, never to the NN. */
+    /* deskew_angle = rotation angle */
     char deskew_angle[16];
-    /* Short UI feedback; detailed failures belong to processing modules. */
+    /* Short UI feedback; ( in short its the logs that is in bottom left ) */
     char status[160];
 
     SDL_Renderer *renderer;  /* used to create the preview texture */
     SDL_Texture *preview;    /* loaded image, NULL until one is loaded */
+    TTF_Font *font_small;
+    TTF_Font *font_medium;
+    TTF_Font *font_large;
+    int ttf_initialized;
     SDL_Surface *source;     /* original pixels, never modified */
     SDL_Surface *current;    /* source after rotation, shown and saved */
     int image_w;             /* size of the loaded image in pixels */
@@ -43,8 +49,9 @@ typedef struct
 
     int grid_rows;
     int grid_columns;
-    char grid[UI_MAX_GRID_SIZE * UI_MAX_GRID_SIZE];
-    char words[UI_MAX_WORDS][UI_MAX_WORD_LENGTH];
+    /* DONT HAVE YET but assuming we can (larping by Lucas apparently)*/
+    char grid[UI_MAX_GRID_SIZE * UI_MAX_GRID_SIZE]; /* the grid recognized by OCR*/
+    char words[UI_MAX_WORDS][UI_MAX_WORD_LENGTH]; /* the list of words recognized*/
     size_t word_count;
     struct Image *ocr_image;
 

@@ -43,7 +43,8 @@ Conseil, gardez l'image de base quelque part pour ne pas perdre définitvement l
 
 `image_from_surface()` convertit la surface SDL affichée (après rotation) en
 pixels grayscale pour le prétraitement. La case grayscale change uniquement
-l'aperçu. Le bouton **Run OCR** applique actuellement le seuillage Otsu et
+l'aperçu ; **Save Image** enregistre l'image affichée en niveaux de gris si
+cette case est cochée. Le bouton **Run OCR** applique actuellement le seuillage Otsu et
 conserve l'image binaire dans `UiState.ocr_image`.
 
 Le panneau de résultats affiche une grille et une liste de mots reçues par
@@ -51,3 +52,28 @@ Le panneau de résultats affiche une grille et une liste de mots reçues par
 détection de grille, la reconnaissance des lettres et l'extraction de la liste
 de mots ne sont pas encore connectées ; le bouton ne produit donc pas encore
 de résultats OCR.
+
+## Police de l'interface
+
+L'interface utilise exclusivement **Advanced Pixel 7** via SDL_ttf. Installez
+SDL2_ttf avec SDL2 et SDL2_image pour compiler le projet, puis gardez le fichier
+`advanced-pixel-7.ttf` à la racine du projet. Le programme ouvre ce chemin
+relatif au répertoire courant ; lancez-le depuis la racine du projet.
+Il n'y a pas de police de remplacement : si le fichier manque ou ne peut pas
+être ouvert, le problème est signalé dans la barre d'état et dans le journal
+SDL.
+
+Au démarrage, le même fichier TTF est ouvert trois fois à des tailles
+différentes, conservées dans `UiState` jusqu'à la fermeture :
+
+- **10 pt** (`font_small`) pour les options, le chemin, les lettres de grille
+  et les messages.
+- **14 pt** (`font_medium`) pour les titres de panneaux et le texte des boutons.
+- **24 pt** (`font_large`) pour le titre principal de la fenêtre.
+
+Le paramètre `scale` de la fonction de rendu `text()` choisit une de ces
+tailles : 1 utilise 10 pt, 2 ou 3 utilise 14 pt, et 4 ou plus utilise 24 pt.
+SDL_ttf rasterise le texte en une surface avec `TTF_RenderUTF8_Blended()` ;
+le renderer SDL la convertit temporairement en texture, la dessine, puis libère
+la surface et la texture. Les objets `TTF_Font` restent ouverts afin d'être
+réutilisés à chaque image et sont libérés par `ui_destroy()`.
