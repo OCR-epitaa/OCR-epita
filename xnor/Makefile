@@ -1,9 +1,10 @@
 SRCS = xnor_network.c
 CC = gcc
 CFLAGS = -Wall -Wextra
+LDLIBS = -lm
 
-xnor: $(SRCS)
-	$(CC) $(CFLAGS) $< -o xnor
+all: $(SRCS)
+	$(CC) $(CFLAGS) $< -o xnor $(LDLIBS)
 
 clean:
 	$(RM) xnor
