@@ -13,7 +13,7 @@
  * Loads a file and converts it to one known pixel layout (RGBA32),
  * so the rotation can copy 32-bit pixels directly.
  */
-SDL_Surface *image_load(const char *path)
+SDL_Surface *surface_load(const char *path)
 {
     SDL_Surface *loaded = IMG_Load(path);
     SDL_Surface *converted;
@@ -33,7 +33,7 @@ SDL_Surface *image_load(const char *path)
  * ORIGINAL it comes from (inverse rotation) and copy it. This leaves no
  * holes, unlike pushing each original pixel forward.
  */
-SDL_Surface *image_rotate(const SDL_Surface *src, double degrees)
+SDL_Surface *surface_rotate(const SDL_Surface *src, double degrees)
 {
     double radians = degrees * PI_VALUE / 180.0;
     double cosine = cos(radians);
@@ -77,7 +77,7 @@ SDL_Surface *image_rotate(const SDL_Surface *src, double degrees)
 }
 
 /* Saves as PNG. Returns 0 on success. */
-int image_save(SDL_Surface *image, const char *path)
+int surface_save(SDL_Surface *image, const char *path)
 {
     return IMG_SavePNG(image, path);
 }
@@ -88,7 +88,7 @@ int image_save(SDL_Surface *image, const char *path)
  * - removes a leading "file://"
  * - decodes %XX escapes (for example %20 is a space)
  */
-void image_clean_path(char *path)
+void surface_clean_path(char *path)
 {
     char *start = path;
     size_t length;
@@ -119,4 +119,3 @@ void image_clean_path(char *path)
     }
     path[out] = '\0';
 }
-

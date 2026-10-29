@@ -1,4 +1,7 @@
-#include "Image_processing.h"
+#include "../include/Image_processing.h"
+#include <stdint.h>
+
+#define PI_VALUE 3.14159265358979323846
 
 struct Image *image_load(const char *path) {
 	// prend un chemin en argument, une image et renvoie une struct image
@@ -83,7 +86,61 @@ int image_save(const struct Image *img, const char *path) {
 	return 0;
 }
 
-void free_image(struct Image *img) {
+struct Image *image_from_surface(SDL_Surface *surface)
+{
+    struct Image *image;
+    int bytes_per_pixel;
+    int x;
+    int y;
+
+    if (surface == NULL || surface->pixels == NULL ||
+            surface->w <= 0 || surface->h <= 0)
+        return NULL;
+    if ((size_t)surface->w > SIZE_MAX / (size_t)surface->h)
+        return NULL;
+    bytes_per_pixel = surface->format->BytesPerPixel;
+    if (bytes_per_pixel < 1 || bytes_per_pixel > 4)
+        return NULL;
+
+    image = malloc(sizeof(*image));
+    if (image == NULL)
+        return NULL;
+    image->width = surface->w;
+    image->height = surface->h;
+    image->pixels = malloc((size_t)image->width * (size_t)image->height);
+    if (image->pixels == NULL) {
+        free(image);
+        return NULL;
+    }
+
+    if (SDL_MUSTLOCK(surface) && SDL_LockSurface(surface) != 0) {
+        image_free(image);
+        return NULL;
+    }
+    for (y = 0; y < image->height; y++) {
+        const Uint8 *row = (const Uint8 *)surface->pixels +
+            (size_t)y * (size_t)surface->pitch;
+
+        for (x = 0; x < image->width; x++) {
+            Uint32 pixel = 0;
+            Uint8 red;
+            Uint8 green;
+            Uint8 blue;
+
+            memcpy(&pixel, row + (size_t)x * (size_t)bytes_per_pixel,
+                (size_t)bytes_per_pixel);
+            SDL_GetRGB(pixel, surface->format, &red, &green, &blue);
+            image->pixels[(size_t)y * (size_t)image->width + (size_t)x] =
+                (Uint8)((299 * red + 587 * green + 114 * blue + 500) /
+                    1000);
+        }
+    }
+    if (SDL_MUSTLOCK(surface))
+        SDL_UnlockSurface(surface);
+    return image;
+}
+
+void image_free(struct Image *img) {
 	if (!img) {
 		return;
 	}
@@ -273,7 +330,7 @@ struct Image *image_rotate(const struct Image *img, double angle_deg) {
     }
 
     // Convert degrees to radians
-    double ang_rad = angle_deg * M_PI / 180.0;
+    double ang_rad = angle_deg * PI_VALUE / 180.0;
     double cos_ang = cos(ang_rad);
     double sin_ang = sin(ang_rad);
 

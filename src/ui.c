@@ -1,5 +1,6 @@
 #include "../include/button.h"
 #include "../include/ui.h"
+#include "../include/Image_processing.h"
 #include <SDL2/SDL_image.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,23 +23,119 @@ static void status(UiState *state, const char *message)
 }
 
 /* Rebuilds the preview texture from state->current. */
-static void refresh_preview(UiState *state)
+static int refresh_preview(UiState *state)
 {
+    SDL_Surface *preview_surface = state->current;
+    SDL_Surface *grayscale_surface = NULL;
+    struct Image *grayscale_image = NULL;
     SDL_Texture *texture;
+    int x;
+    int y;
 
     if (state->current == NULL)
-        return;
+        return 0;
+    if (state->grayscale) {
+        grayscale_image = image_from_surface(state->current);
+        if (grayscale_image == NULL) {
+            status(state, "COULD NOT CONVERT IMAGE TO GRAYSCALE");
+            return -1;
+        }
+        grayscale_surface = SDL_CreateRGBSurfaceWithFormat(0,
+            grayscale_image->width, grayscale_image->height, 32,
+            SDL_PIXELFORMAT_RGBA32);
+        if (grayscale_surface == NULL) {
+            image_free(grayscale_image);
+            status(state, "COULD NOT CREATE GRAYSCALE PREVIEW");
+            return -1;
+        }
+        if (SDL_MUSTLOCK(grayscale_surface) &&
+                SDL_LockSurface(grayscale_surface) != 0) {
+            SDL_FreeSurface(grayscale_surface);
+            image_free(grayscale_image);
+            status(state, "COULD NOT LOCK GRAYSCALE PREVIEW");
+            return -1;
+        }
+        for (y = 0; y < grayscale_image->height; y++) {
+            Uint32 *row = (Uint32 *)((Uint8 *)grayscale_surface->pixels +
+                y * grayscale_surface->pitch);
+
+            for (x = 0; x < grayscale_image->width; x++) {
+                Uint8 value = grayscale_image->pixels[
+                    (size_t)y * (size_t)grayscale_image->width +
+                    (size_t)x];
+
+                row[x] = SDL_MapRGBA(grayscale_surface->format, value,
+                    value, value, 255);
+            }
+        }
+        if (SDL_MUSTLOCK(grayscale_surface))
+            SDL_UnlockSurface(grayscale_surface);
+        preview_surface = grayscale_surface;
+    }
     texture = SDL_CreateTextureFromSurface(state->renderer,
-        state->current);
+        preview_surface);
+    if (grayscale_surface != NULL)
+        SDL_FreeSurface(grayscale_surface);
+    if (grayscale_image != NULL)
+        image_free(grayscale_image);
     if (texture == NULL) {
         status(state, "COULD NOT CREATE PREVIEW TEXTURE");
-        return;
+        return -1;
     }
     if (state->preview != NULL)
         SDL_DestroyTexture(state->preview);
     state->preview = texture;
     state->image_w = state->current->w;
     state->image_h = state->current->h;
+    return 0;
+}
+
+static void clear_ocr_results(UiState *state)
+{
+    state->grid_rows = 0;
+    state->grid_columns = 0;
+    state->word_count = 0;
+    memset(state->grid, 0, sizeof(state->grid));
+    memset(state->words, 0, sizeof(state->words));
+}
+
+static void clear_ocr_data(UiState *state)
+{
+    clear_ocr_results(state);
+    if (state->ocr_image != NULL)
+        image_free(state->ocr_image);
+    state->ocr_image = NULL;
+}
+
+int ui_set_ocr_results(UiState *state, int rows, int columns,
+    const char *letters, const char *const *words, size_t word_count)
+{
+    size_t index;
+    int row;
+
+    if (state == NULL || rows < 1 || rows > UI_MAX_GRID_SIZE ||
+            columns < 1 || columns > UI_MAX_GRID_SIZE || letters == NULL ||
+            word_count > UI_MAX_WORDS || (word_count > 0 && words == NULL))
+        return -1;
+    for (index = 0; index < word_count; index++) {
+        if (words[index] == NULL ||
+                strlen(words[index]) >= UI_MAX_WORD_LENGTH)
+            return -1;
+    }
+
+    clear_ocr_results(state);
+    state->grid_rows = rows;
+    state->grid_columns = columns;
+    for (row = 0; row < rows; row++) {
+        memcpy(state->grid + row * UI_MAX_GRID_SIZE,
+            letters + row * columns, (size_t)columns);
+    }
+    for (index = 0; index < word_count; index++)
+        snprintf(state->words[index], sizeof(state->words[index]), "%s",
+            words[index]);
+    state->word_count = word_count;
+    status(state, "OCR RESULTS DISPLAYED");
+    return 0;
 }
 
 /*
@@ -55,7 +152,7 @@ static void apply_rotation(UiState *state)
         return;
     if (state->manual_deskew)
         angle = strtod(state->deskew_angle, NULL);
-    rotated = image_rotate(state->source, angle);
+    rotated = surface_rotate(state->source, angle);
     if (rotated == NULL) {
         status(state, "COULD NOT ROTATE IMAGE");
         return;
@@ -63,7 +160,8 @@ static void apply_rotation(UiState *state)
     if (state->current != NULL)
         SDL_FreeSurface(state->current);
     state->current = rotated;
-    refresh_preview(state);
+    if (refresh_preview(state) != 0)
+        return;
     snprintf(message, sizeof(message), "ROTATION APPLIED: %.1f DEGREES",
         angle);
     status(state, message);
@@ -79,7 +177,7 @@ static void load_image(UiState *state)
         status(state, "NO IMAGE PATH GIVEN");
         return;
     }
-    loaded = image_load(state->image_path);
+    loaded = surface_load(state->image_path);
     if (loaded == NULL) {
         status(state, "COULD NOT LOAD IMAGE - CHECK THE PATH");
         return;
@@ -87,6 +185,7 @@ static void load_image(UiState *state)
     if (state->source != NULL)
         SDL_FreeSurface(state->source);
     state->source = loaded;
+    clear_ocr_data(state);
     apply_rotation(state);
     snprintf(message, sizeof(message), "IMAGE LOADED - %dX%d",
         state->source->w, state->source->h);
@@ -100,12 +199,45 @@ static void save_current_image(UiState *state)
 
     if (state->current == NULL) {
         status(state, "NOTHING TO SAVE - LOAD AN IMAGE FIRST");
-    } else if (image_save(state->current, SAVE_FILE) != 0) {
+    } else if (surface_save(state->current, SAVE_FILE) != 0) {
         status(state, "COULD NOT SAVE IMAGE");
     } else {
         snprintf(message, sizeof(message), "SAVED TO %s", SAVE_FILE);
         status(state, message);
     }
+}
+
+static void run_preprocessing(UiState *state)
+{
+    struct Image *grayscale;
+    struct Image *binary;
+    int threshold;
+
+    if (state->current == NULL) {
+        status(state, "LOAD AN IMAGE FIRST");
+        return;
+    }
+    clear_ocr_data(state);
+    grayscale = image_from_surface(state->current);
+    if (grayscale == NULL) {
+        status(state, "COULD NOT CONVERT IMAGE FOR OCR");
+        return;
+    }
+    threshold = automatic_threshold_calculator(grayscale);
+    if (threshold < 0) {
+        image_free(grayscale);
+        status(state, "COULD NOT CALCULATE IMAGE THRESHOLD");
+        return;
+    }
+    binary = image_binarize(grayscale, threshold);
+    image_free(grayscale);
+    if (binary == NULL) {
+        status(state, "COULD NOT BINARIZE IMAGE");
+        return;
+    }
+
+    state->ocr_image = binary;
+    status(state, "PREPROCESSING READY - OCR NOT CONNECTED");
 }
 
 /* ------------------------------------------------------------------ */
@@ -137,6 +269,8 @@ void ui_destroy(UiState *state)
         SDL_FreeSurface(state->current);
     if (state->source != NULL)
         SDL_FreeSurface(state->source);
+    if (state->ocr_image != NULL)
+        image_free(state->ocr_image);
     state->preview = NULL;
     state->current = NULL;
     state->source = NULL;
@@ -206,7 +340,7 @@ static void paste_path(UiState *state)
     } else {
         snprintf(state->image_path, sizeof(state->image_path), "%s",
             clipboard);
-        image_clean_path(state->image_path);
+        surface_clean_path(state->image_path);
         state->editing_path = 0;
         load_image(state);
     }
@@ -296,6 +430,12 @@ static void handle_click(UiState *state, const SDL_Event *event)
     } else if (hit(SAVE_BUTTON, x, y)) {
         save_current_image(state);
 
+    } else if (hit(GRAYSCALE_ROW, x, y)) {
+        toggle(&state->grayscale);
+        if (refresh_preview(state) == 0)
+            status(state, state->grayscale ? "GRAYSCALE PREVIEW ON" :
+                "GRAYSCALE PREVIEW OFF");
+
     } else if (hit(RUN_BUTTON, x, y)) {
         /*
          * Single handoff to the recognition pipeline. Keep the UI free
@@ -307,9 +447,7 @@ static void handle_click(UiState *state, const SDL_Event *event)
          * - recognize each crop (separate NN module, shared weights)
          * - rebuild the character grid and the word strings
          */
-        status(state, state->current == NULL ?
-            "LOAD AN IMAGE FIRST" :
-            "OCR HANDOFF PLACEHOLDER - NOT CONNECTED");
+        run_preprocessing(state);
 
     } else if (hit(SOLVE_BUTTON, x, y)) {
         /*

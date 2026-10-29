@@ -227,31 +227,83 @@ static void draw_options(SDL_Renderer *renderer, const UiState *state)
     option(renderer, NOISE_ROW, "NOISE REDUCTION", state->noise_reduction);
     option(renderer, CONTRAST_ROW, "CONTRAST BOOST",
         state->contrast_enhancement);
+    option(renderer, GRAYSCALE_ROW, "GRAYSCALE CONVERSION",
+        state->grayscale);
+    
 }
 
-/* Right column: recognized grid and word list (placeholders for now). */
-static void draw_results(SDL_Renderer *renderer)
+/* Right column: display OCR results supplied through the UI state. */
+static void draw_results(SDL_Renderer *renderer, const UiState *state)
 {
+    SDL_Rect grid_area = {1020, 172, 376, 326};
     int row;
     int column;
 
-    /*
-     * TODO: draw the recognized letters in the cells, then the solved
-     * grid with each found word circled (first to last letter).
-     */
     panel(renderer, (SDL_Rect){1000, 110, 416, 410}, "GRID");
-    for (row = 0; row <= 7; row++)
-        fill(renderer, (SDL_Rect){1040, 195 + row * 34, 239, 1},
-            rgb(55, 79, 104));
-    for (column = 0; column <= 7; column++)
-        fill(renderer, (SDL_Rect){1040 + column * 34, 195, 1, 239},
-            rgb(55, 79, 104));
+    if (state->grid_rows == 0 || state->grid_columns == 0) {
+        text(renderer, 1050, 270, "OCR BACKEND NOT CONNECTED", 1,
+            rgb(130, 150, 172));
+    } else {
+        int cell_w = grid_area.w / state->grid_columns;
+        int cell_h = grid_area.h / state->grid_rows;
 
-    /* TODO: draw the recognized words, one per line. */
+        for (row = 0; row < state->grid_rows; row++) {
+            for (column = 0; column < state->grid_columns; column++) {
+                char letter[2] = {
+                    state->grid[row * UI_MAX_GRID_SIZE + column], '\0'
+                };
+                int left = grid_area.x +
+                    column * grid_area.w / state->grid_columns;
+                int top = grid_area.y +
+                    row * grid_area.h / state->grid_rows;
+                int right = grid_area.x +
+                    (column + 1) * grid_area.w / state->grid_columns;
+                int bottom = grid_area.y +
+                    (row + 1) * grid_area.h / state->grid_rows;
+
+                if (letter[0] != '\0') {
+                    int scale = cell_w >= 18 && cell_h >= 18 ? 2 : 1;
+                    text(renderer, left + (right - left - 6 * scale) / 2,
+                        top + (bottom - top - 7 * scale) / 2, letter, scale,
+                        rgb(222, 234, 247));
+                }
+            }
+        }
+        for (row = 0; row <= state->grid_rows; row++) {
+            int y = grid_area.y + row * grid_area.h / state->grid_rows;
+
+            fill(renderer, (SDL_Rect){grid_area.x, y, grid_area.w, 1},
+                rgb(55, 79, 104));
+        }
+        for (column = 0; column <= state->grid_columns; column++) {
+            int x = grid_area.x +
+                column * grid_area.w / state->grid_columns;
+
+            fill(renderer, (SDL_Rect){x, grid_area.y, 1, grid_area.h},
+                rgb(55, 79, 104));
+        }
+    }
+
     panel(renderer, (SDL_Rect){1000, 536, 416, 254}, "WORD LIST");
-    for (row = 0; row < 4; row++)
-        fill(renderer, (SDL_Rect){1020, 600 + row * 27, 180 - row * 18, 6},
-            rgb(42, 59, 79));
+    if (state->word_count == 0) {
+        text(renderer, 1020, 600, "NO WORDS RECOGNIZED", 1,
+            rgb(130, 150, 172));
+    } else {
+        size_t visible_words = state->word_count < 7 ?
+            state->word_count : 7;
+        size_t index;
+
+        for (index = 0; index < visible_words; index++)
+            text(renderer, 1020, 594 + (int)index * 24,
+                state->words[index], 1, rgb(189, 203, 220));
+        if (state->word_count > visible_words) {
+            char more[32];
+
+            snprintf(more, sizeof(more), "+ %lu MORE",
+                (unsigned long)(state->word_count - visible_words));
+            text(renderer, 1020, 762, more, 1, rgb(130, 150, 172));
+        }
+    }
 }
 
 /* Bottom bar: status message and the action buttons. */
@@ -277,7 +329,7 @@ void ui_render(SDL_Renderer *renderer, const UiState *state)
 
     draw_image_panel(renderer, state);
     draw_options(renderer, state);
-    draw_results(renderer);
+    draw_results(renderer, state);
     draw_footer(renderer, state);
     SDL_RenderPresent(renderer);
 }

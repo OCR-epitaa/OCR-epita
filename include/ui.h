@@ -2,8 +2,13 @@
 #define UI_H
 
 #include "window.h"
+#include <stddef.h>
 
+#define UI_MAX_GRID_SIZE 32
+#define UI_MAX_WORDS 32
+#define UI_MAX_WORD_LENGTH 48
 
+struct Image;
 
 
 typedef struct
@@ -34,6 +39,15 @@ typedef struct
     int image_w;             /* size of the loaded image in pixels */
     int image_h;
 
+    int grayscale;          /* whether to convert the image to grayscale */
+
+    int grid_rows;
+    int grid_columns;
+    char grid[UI_MAX_GRID_SIZE * UI_MAX_GRID_SIZE];
+    char words[UI_MAX_WORDS][UI_MAX_WORD_LENGTH];
+    size_t word_count;
+    struct Image *ocr_image;
+
 } UiState;
 
 /*
@@ -44,5 +58,8 @@ void ui_initialize(UiState *state, SDL_Renderer *renderer);
 void ui_destroy(UiState *state);
 void ui_handle_event(UiState *state, const SDL_Event *event);
 void ui_render(SDL_Renderer *renderer, const UiState *state);
+/* Letters are row-major; returns -1 if dimensions or word data exceed limits. */
+int ui_set_ocr_results(UiState *state, int rows, int columns,
+    const char *letters, const char *const *words, size_t word_count);
 
 #endif

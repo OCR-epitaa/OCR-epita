@@ -38,3 +38,16 @@ Image *image_rotate(const Image *img, double angle_deg);
 Tourne l'image img de angle_deg degrés autour du centre.
 Attention, lors d'une rotation non divisible par 90, les coins de l'image sortent du cadre et de nouveau arrive. Ces nouveaux sont fills par du blanc.
 Conseil, gardez l'image de base quelque part pour ne pas perdre définitvement les pixels perdus au cas où.
+
+## Interface graphique
+
+`image_from_surface()` convertit la surface SDL affichée (après rotation) en
+pixels grayscale pour le prétraitement. La case grayscale change uniquement
+l'aperçu. Le bouton **Run OCR** applique actuellement le seuillage Otsu et
+conserve l'image binaire dans `UiState.ocr_image`.
+
+Le panneau de résultats affiche une grille et une liste de mots reçues par
+`ui_set_ocr_results()`. Les lettres sont fournies en ordre row-major. La
+détection de grille, la reconnaissance des lettres et l'extraction de la liste
+de mots ne sont pas encore connectées ; le bouton ne produit donc pas encore
+de résultats OCR.
