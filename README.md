@@ -78,6 +78,6 @@ Sous Debian ou ubuntu, installez make et gcc.
 entrer dans 'xnor/' et tapez 'make all' et './xnor', ne pas oublier make clean après utilisation
 
 ## Utilisation
-1. Le programme affiche sur la console les biais et les poids générés aléatoirement (entre -1 et 0)
+1. Le programme affiche sur la console les biais et les poids générés aléatoirement (entre -1 et 1)
 2. Le programme affiche sur la console le résultat de la fonction de perte toutes les 1000 époques (forcément décroissante)
 3. Le programme crée un fichier et met dans celui-ci les résultats de sortie de toutes les propagations avant avec les poids et biais modifiés
