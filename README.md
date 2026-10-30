@@ -64,3 +64,20 @@ Appuyez sur **Échap** pour quitter. Des images d'exemple sont disponibles dans
 - `include/` : déclarations des fonctions et structures partagées.
 - `test/` : images d'essai.
 - `Makefile` : compilation et nettoyage du projet.
+
+## réseau de neurones
+
+réseau de neurones avec 2 neurones dans la couoche d'entrée qui peuvent être 0 ou 1,
+1 couche cachée avec 3 neurones et 1 neurone dans la couche de sortie.
+Le réseau de neurones a pour but d'apprendre la fonction logique xnor.
+
+## Prérequis
+Sous Debian ou ubuntu, installez make et gcc.
+
+## Compilation et lancement
+entrer dans 'xnor/' et tapez 'make all' et './xnor', ne pas oublier make clean après utilisation
+
+## Utilisation
+1. Le programme affiche sur la console les biais et les poids générés aléatoirement (entre -1 et 0)
+2. Le programme affiche sur la console le résultat de la fonction de perte toutes les 1000 époques (forcément décroissante)
+3. Le programme crée un fichier et met dans celui-ci les résultats de sortie de toutes les propagations avant avec les poids et biais modifiés
