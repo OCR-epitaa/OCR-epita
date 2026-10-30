@@ -7,4 +7,4 @@ all: $(SRCS)
 	$(CC) $(CFLAGS) $< -o xnor $(LDLIBS)
 
 clean:
-	$(RM) xnor
+	$(RM) xnor results

@@ -110,10 +110,17 @@ void backward(network *net, double *x, double *h,
 }
 
 void update(network net,double *h, double *o){
+	FILE *fp = fopen("results", "w");
+	if (!fp){
+		printf("error opening result file\n");
+		return;
+	}
 	for (int epoch = 0; epoch < MAX_EPOCHS; epoch++){
 		double loss = 0.0;
 		for (int s = 0; s < 4; s++){
 			forward(&net, inputs[s], h, o);
+			fprintf(fp, "%.0f %.0f -> %.4f (expected %.0f)\n",
+				inputs[0][s], inputs[1][s], o[0], targets[s]);
 			loss += 0.5 * (o[0] - targets[s]) * (o[0] - targets[s]);
 			backward(&net, inputs[s], h, o, targets[s], 0.5);
 		}
@@ -133,5 +140,4 @@ int main(){
 	double h[NB_HIDDEN];
 	double o[NB_OUTPUT];
 	update(net, h, o);
-	print_network(&net);
 }
