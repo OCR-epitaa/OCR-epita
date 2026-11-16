@@ -363,3 +363,65 @@ struct Image *image_rotate(const struct Image *img, double angle_deg) {
     // Alors en gros on parcours l'immage result et on déduit quel couleur doit être où en observant l'image source
     return result;
 }
+
+// Noise reduction ( Median Filter )
+
+// median using sort function ( Insertion sort )
+// for a 3 x 3 array, sort the arr then return the middle value to replace
+
+unsigned char median(unsigned char *arr)
+{
+    for (int i = 1; i < 9; ++i) {
+        int key = arr[i];
+        int j = i - 1;
+
+        /* Move elements of arr[0..i-1], that are
+           greater than key, to one position ahead
+           of their current position */
+        while (j >= 0 && arr[j] > key) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+        arr[j + 1] = key;
+    }
+    return arr[5];
+}
+
+
+struct Image *image_denoise(const struct Image *img) {
+    
+
+    struct Image *result = malloc(sizeof(struct Image));
+    if (!result) {
+        return NULL;
+    }
+    result->height = img->height;
+    result->width  = img->width;
+    result->pixels = img->pixels;
+    
+    // goes through all pixels
+    for (int x = 1; x < result->width -1; x++) {
+        for (int y = 1; y < result->height -1; y++) {
+            
+            unsigned char grid[9] = malloc(sizeof(unsigned char) *; 
+            // the 3x3 grid to filter with median
+            int index_g = 0;
+
+            // goes through a 3x3 grid starting from the middle pixel
+            for (int dx = -1; dx < 1; dx++) {
+                for (int dy = -1; dy < 1; dy++) {
+                    grid[index] = img->pixels[(x + dx) * width + (y + dy)]  ;
+                    index_g++;
+                }
+            }
+            
+            index_g = 0;
+
+            result->pixels[x * width + y] = median(grid);
+
+        }
+    }
+
+
+
+}
